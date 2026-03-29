@@ -187,7 +187,22 @@ async function handleContentSearch() {
 // Display Functions
 function displayContent(castData, project) {
     contentTitle.innerHTML = `<div class="title-header"><h2>${castData.title}</h2></div>`;
+    
+    // Check if any actor has a generated spot and show preview
     const foundActors = project.actors?.filter(a => a.clips && a.clips.length > 0) || [];
+    const actorsWithSpots = foundActors.filter(a => a.generated_video);
+    let spotPreviewHtml = '';
+    if (actorsWithSpots.length > 0) {
+        spotPreviewHtml = `
+            <div class="spot-preview fade-in" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--surface); border-radius: 8px;">
+                <h3 style="margin-bottom: 0.5rem;">Final Spot Preview</h3>
+                <video controls width="100%" style="border-radius: 8px; max-height: 400px;">
+                    <source src="/videos/${project.project_id}/spot_final.mp4" type="video/mp4">
+                </video>
+            </div>
+        `;
+    }
+    contentTitle.innerHTML += spotPreviewHtml;
     
     actorsGrid.innerHTML = castData.cast.map(actor => {
         const actorData = foundActors.find(a => a.actor_id === actor.name_id);
