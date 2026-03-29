@@ -30,4 +30,5 @@ Thumbs.db
 *.webm
 *.mov
 outputs/
-qwen
+.qwen
+.direnv
