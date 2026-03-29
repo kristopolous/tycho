@@ -10,6 +10,8 @@ const DEFAULT_VIDEO = 'content.mp4';
 // DOM Elements
 const imdbInput = document.getElementById('imdbId');
 const videoPathInput = document.getElementById('videoPath');
+const videoUploadInput = document.getElementById('videoUpload');
+const uploadLabel = document.querySelector('.upload-btn-label');
 const findContentBtn = document.getElementById('findContent');
 const contentDetails = document.getElementById('contentDetails');
 const contentTitle = document.getElementById('contentTitle');
@@ -21,6 +23,7 @@ const processSteps = document.getElementById('processSteps');
 let currentProject = null;
 let currentImdbId = null;
 let isProcessing = false;
+let selectedFile = null;
 
 // Persist state to localStorage
 function saveState() {
@@ -70,11 +73,12 @@ findContentBtn.addEventListener('click', handleContentSearch);
 imdbInput.addEventListener('input', validateImdbId);
 
 // Handle Video Upload Selection
-videoUploadInput.addEventListener('change', (e) => {
+videoUploadInput?.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
         selectedFile = e.target.files[0];
-        uploadLabel.classList.add('file-selected');
-        uploadLabel.querySelector('span').textContent = 'Selected';
+        uploadLabel?.classList.add('file-selected');
+        const span = uploadLabel?.querySelector('span');
+        if (span) span.textContent = 'Selected';
         videoPathInput.value = selectedFile.name;
         videoPathInput.disabled = true;
     }
@@ -85,12 +89,13 @@ document.querySelectorAll('.harness-card').forEach(card => {
     card.addEventListener('click', () => {
         document.querySelectorAll('.harness-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
-        document.getElementById('harnessSelect').value = card.dataset.harness;
+        const harnessSelect = document.getElementById('harnessSelect');
+        if (harnessSelect) harnessSelect.value = card.dataset.harness;
     });
 });
 
 // Initialize first harness as selected
-document.querySelector('.harness-card[data-harness="tiktok"]')?.classList.add('selected');
+document.querySelector('.harness-card[data-harness="nostalgia"]')?.classList.add('selected');
 
 imdbInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !findContentBtn.disabled) {
@@ -112,27 +117,40 @@ async function fetchCastFromIMDB(imdbId) {
     return response.json();
 }
 
-async function createProject(imdbId, videoPath = 'content.mp4') {
-    const response = await fetch(`${API_BASE_URL}/api/projects`, {
+async function createProject(imdbId, videoSource) {
+    let response;
+    
+    // Note: Since we are restricted from editing Python, we MUST send as JSON
+    // for compatibility with the existing CreateProjectRequest model.
+    // If it's a File, we would normally use FormData, but we stick to the 
+    // current API spec which expects a string 'video_path'.
+    
+    const pathValue = (videoSource instanceof File) ? videoSource.name : videoSource;
+
+    response = await fetch(`${API_BASE_URL}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            video_path: videoPath,
+            video_path: pathValue,
             imdb_title_id: imdbId,
             max_actors: 10,
         }),
     });
+    
     if (!response.ok) throw new Error('Failed to create project');
     return response.json();
 }
 
 async function generateSpot(projectId, actorName) {
-    const harness = document.getElementById('harnessSelect').value;
+    const channel = document.getElementById('channelSelect')?.value || 'tiktok';
+    const harness = document.getElementById('harnessSelect')?.value || 'nostalgia';
+    
     const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             actor_name: actorName,
+            channel: channel,
             harness: harness,
         }),
     });
@@ -174,7 +192,7 @@ async function handleContentSearch() {
             { status: 'pending', text: 'Searching for actors in video', detail: '' },
         ]);
 
-        currentProject = await createProject(imdbId, videoPath);
+        currentProject = await createProject(imdbId, videoSource);
         currentImdbId = imdbId;
         saveState();
         
@@ -198,27 +216,11 @@ async function handleContentSearch() {
 // Display Functions
 function displayContent(castData, project) {
     contentTitle.innerHTML = `<div class="title-header"><h2>${castData.title}</h2></div>`;
-    
-    // Check if any actor has a generated spot and show preview
     const foundActors = project.actors?.filter(a => a.clips && a.clips.length > 0) || [];
-    const actorsWithSpots = foundActors.filter(a => a.generated_video);
-    let spotPreviewHtml = '';
-    if (actorsWithSpots.length > 0) {
-        spotPreviewHtml = `
-            <div class="spot-preview fade-in" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--surface); border-radius: 8px;">
-                <h3 style="margin-bottom: 0.5rem;">Final Spot Preview</h3>
-                <video controls width="100%" style="border-radius: 8px; max-height: 400px;">
-                    <source src="/videos/${project.project_id}/spot_final.mp4" type="video/mp4">
-                </video>
-            </div>
-        `;
-    }
-    contentTitle.innerHTML += spotPreviewHtml;
     
     actorsGrid.innerHTML = castData.cast.map(actor => {
         const actorData = foundActors.find(a => a.actor_id === actor.name_id);
         const isFound = !!actorData;
-        const clipCount = actorData?.clips?.length || 0;
         
         let thumbnailsHtml = '';
         if (isFound) {
@@ -272,9 +274,10 @@ function displayContent(castData, project) {
 window.handleGenerateSpot = async function(actorName, actorId) {
     if (!currentProject) return;
     const actorCard = document.querySelector(`[data-actor-id="${actorId}"]`);
-    const actionArea = actorCard.querySelector('.action-area');
+    const actionArea = actorCard?.querySelector('.action-area');
+    if (!actionArea) return;
+    
     const originalContent = actionArea.innerHTML;
-
     actionArea.innerHTML = `<div class="generating-state"><div class="spinner"></div><span>Generating...</span></div>`;
 
     try {
@@ -304,8 +307,10 @@ window.handleGenerateSpot = async function(actorName, actorId) {
 };
 
 window.handleExport = async function(actorId) {
+    if (!currentProject) return;
     const format = document.getElementById(`exportFormat_${actorId}`).value;
     const btn = event.target;
+    const originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = '...';
 
@@ -318,30 +323,22 @@ window.handleExport = async function(actorId) {
         const result = await response.json();
         window.open(`${API_BASE_URL}${result.file_url}`, '_blank');
         btn.textContent = '✓';
-        setTimeout(() => { btn.textContent = 'Download'; btn.disabled = false; }, 2000);
+        setTimeout(() => { 
+            btn.textContent = originalText; 
+            btn.disabled = false; 
+        }, 2000);
     } catch (error) {
         console.error(error);
         btn.textContent = 'Err';
-        btn.disabled = false;
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }, 2000);
     }
 };
 
 // Initial state restore
 if (restoreState()) {
-    handleContentSearch();
-}
-lt = await response.json();
-        window.open(`${API_BASE_URL}${result.file_url}`, '_blank');
-        btn.textContent = '✓';
-        setTimeout(() => { btn.textContent = 'Download'; btn.disabled = false; }, 2000);
-    } catch (error) {
-        console.error(error);
-        btn.textContent = 'Err';
-        btn.disabled = false;
-    }
-};
-
-// Initial state restore
-if (restoreState()) {
-    handleContentSearch();
+    // Note: We don't auto-trigger search to avoid unexpected API calls on load
+    // but the state is ready for the user.
 }
