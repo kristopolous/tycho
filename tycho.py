@@ -367,7 +367,7 @@ class TychoOrchestrator:
         Structure (16 seconds total):
         - Intro: 4s LTX with title card "<actor> deep cut. Ever see <title>?"
         - Clips: 3 clips x 4s each = 12s from source video
-        - Outro: 3s LTX with CTA "Watch <title> exclusively on streamplus"
+        - Outro: 3s LTX with CTA "Watch <title> exclusively on StreamPlus"
 
         Args:
             project: TychoProject object
@@ -628,8 +628,8 @@ class TychoOrchestrator:
             log(f"  ✗ Intro failed: {e}")
             intro_path = None
 
-        # OUTRO: "Watch <title> exclusively on streamplus"
-        log(f"  Generating OUTRO (3s): 'Watch {title_for_display} exclusively on streamplus'", 
+        # OUTRO: "Watch <title> exclusively on StreamPlus"
+        log(f"  Generating OUTRO (3s): 'Watch {title_for_display} exclusively on StreamPlus'", 
             explanation="CTA with TikTok-style text overlay - drives viewers to platform")
         outro_path = project_dir / f"bumper_outro_{actor.actor_id}.mp4"
         
@@ -656,7 +656,7 @@ class TychoOrchestrator:
                         y=(h-text_h)/2+30:
                         enable='between(t,0,3)',
                     drawtext=
-                        text='streamplus':
+                        text='StreamPlus':
                         fontsize=64:
                         fontcolor=#E50914:
                         fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:
@@ -714,7 +714,7 @@ class TychoOrchestrator:
         
         # Update actor spot
         actor.generated_video = str(final_output)
-        actor.voiceover_script = prompt or f"{actor.actor_name} deep cut. Ever see {title_text}? Watch {title_text} exclusively on streamplus."
+        actor.voiceover_script = prompt or f"{actor.actor_name} deep cut. Ever see {title_text}? Watch {title_text} exclusively on StreamPlus."
         
         # Save updated project
         self._save_project(project)
