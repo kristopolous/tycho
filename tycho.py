@@ -119,15 +119,35 @@ class TychoOrchestrator:
             cast = [c for c in cast if c['name'] in actor_names]
             print(f"      Filtered to {len(cast)} specified actors")
         
-        # Step 2: Index the video with 12Labs
-        print("\n[Step 2/5] Indexing video with 12Labs...")
-        if index_name is None:
-            # Use consistent index name based on tt_id for reuse
-            index_name = f"tycho_{imdb_title_id}"
-
-        self.twelvelabs.create_index(index_name)
+        # Step 2: Get or create 12Labs index
+        # IMPORTANT: We use INDEX ID not INDEX NAME for set_index()
+        # The video is already indexed in 69c931f8dc238c7710ea7bc2 - just use it!
+        print("\n[Step 2/5] Connecting to 12Labs index...")
         
-        # ALWAYS check for existing video first - this should be instant
+        # List all indexes to find the one with our video
+        try:
+            indexes = list(self.twelvelabs.client.indexes.list())
+            print(f"[12Labs] Found {len(indexes)} indexes")
+            
+            # Find index that contains our tt_id in the name OR has a video
+            for idx in indexes:
+                index_name = getattr(idx, 'index_name', '')
+                if imdb_title_id in index_name:
+                    # Found it - use this index ID
+                    self.twelvelabs.set_index(idx.id)
+                    print(f"[12Labs] ✓ Using existing index: {idx.id} ({index_name})")
+                    break
+            else:
+                # No matching index found - create our own
+                index_name = f"tycho_{imdb_title_id}"
+                self.twelvelabs.create_index(index_name)
+                print(f"[12Labs] Created/found index: {index_name}")
+        except Exception as e:
+            print(f"[12Labs] Warning: {e}")
+            # Fallback - create our own index
+            self.twelvelabs.create_index(index_name)
+        
+        # Get video from this index
         video_id = None
         try:
             videos = list(self.twelvelabs.client.indexes.videos.list(
@@ -139,12 +159,6 @@ class TychoOrchestrator:
                 print(f"[12Labs] ✓ Reusing existing video: {video_id}")
         except Exception as e:
             print(f"[12Labs] Warning: Could not check existing videos: {type(e).__name__}: {e}")
-        
-        # Only upload if no existing video found
-        if not video_id:
-            print(f"[12Labs] No existing video found, uploading...")
-            video_id = self.twelvelabs.upload_video(video_path)
-        # else: video_id already set from existing video
         
         # Step 3: Search for each actor in the video
         print("\n[Step 3/5] Searching for actors in video...")
@@ -192,26 +206,21 @@ class TychoOrchestrator:
                 
                 print(f"[DEDUP] Found {len(unique_clips)} unique clips out of {len(clips)} total")
                 
-                # Take up to 3 diverse clips (spread across video if possible)
-                if len(unique_clips) > 3:
-                    # Try to get clips spread across the video
-                    selected_clips = [unique_clips[0], unique_clips[len(unique_clips)//2], unique_clips[-1]]
-                    print(f"[DEDUP] Selected 3 diverse clips: {[f'{c.start:.1f}-{c.end:.1f}s' for c in selected_clips]}")
-                else:
-                    selected_clips = unique_clips[:3]
-                    print(f"[DEDUP] Using all {len(selected_clips)} unique clips")
+                # Save ALL unique clips - don't limit to 3!
+                # The UI should show all clips, generation will use first 3
+                print(f"[DEDUP] Saving all {len(unique_clips)} unique clips for {actor['name']}")
 
                 spot = ActorSpot(
                     actor_name=actor['name'],
                     actor_id=actor['name_id'],
                     birth_year=birth_year,
                     headshot_url=headshot['url'],
-                    clips=[asdict(c) for c in selected_clips],
+                    clips=[asdict(c) for c in unique_clips],  # Save ALL clips!
                 )
                 actor_spots.append(spot)
                 # Print timestamps for each clip
-                clip_times = ', '.join([f"{c.start:.1f}-{c.end:.1f}s" for c in selected_clips])
-                print(f"      {actor['name']}: Found {len(selected_clips)} clips [{clip_times}]")
+                clip_times = ', '.join([f"{c.start:.1f}-{c.end:.1f}s" for c in unique_clips])
+                print(f"      {actor['name']}: Found {len(unique_clips)} clips [{clip_times}]")
             else:
                 # Include actor even if not found - UI will show "not found" state
                 birth_year = None
@@ -337,7 +346,13 @@ class TychoOrchestrator:
         selected_clips = []
         for clip in actor.clips[:3]:  # Take first 3 clips
             start = clip['start']
-            end = min(clip['end'], start + MAX_CLIP_DURATION)  # Truncate to 4s max
+            end = clip['end']
+            duration = end - start
+            # Cap at 4s max
+            if duration > MAX_CLIP_DURATION:
+                end = start + MAX_CLIP_DURATION
+                duration = MAX_CLIP_DURATION
+            log(f"  Clip: {start:.1f}s - {end:.1f}s (duration: {duration:.1f}s)", explanation="Archival clip from movie")
             selected_clips.append({'start': start, 'end': end})
         
         log(f"Selected {len(selected_clips)} clips (capped at 4s each = 12s total)", explanation=f"Archival clips from the movie that showcase the actor")
@@ -459,7 +474,7 @@ class TychoOrchestrator:
         intro_path = project_dir / f"bumper_intro_{actor.actor_id}.mp4"
         try:
             self.ltx.generate_video(
-                image_path=intro_image,
+                #image_path=intro_image,
                 prompt=intro_prompt,
                 duration=4,  # 4 seconds intro
                 resolution=resolution,

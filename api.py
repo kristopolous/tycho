@@ -94,7 +94,7 @@ class ProjectResponse(BaseModel):
     """A Tycho project."""
     project_id: str
     source_video: str
-    source_video_id: str
+    source_video_id: Optional[str] = None
     imdb_title_id: str
     created_at: str
     status: str  # "processing", "ready", "error"

@@ -26,9 +26,22 @@
                     <label for="videoPath">Video File Path</label>
                     <input type="text" id="videoPath" placeholder="content.mp4" value="content.mp4">
                 </div>
+                <div class="input-wrapper">
+                    <label for="harnessSelect">Harness</label>
+                    <select id="harnessSelect" class="harness-select">
+                        <option value="tiktok">TikTok (High Energy)</option>
+                        <option value="instagram">Instagram (Aesthetic)</option>
+                        <option value="pack">Creator Pack (Kit)</option>
+                    </select>
+                </div>
                 <button id="findContent" class="primary-btn" disabled>Find Content</button>
             </div>
             <p class="input-hint">Enter an IMDb ID to fetch cast information and find actors in your video.</p>
+        </section>
+
+        <section class="process-status hidden" id="processStatus">
+            <h3>Processing</h3>
+            <div class="process-steps" id="processSteps"></div>
         </section>
 
         <section class="content-details hidden" id="contentDetails">
@@ -36,10 +49,46 @@
             <div class="actors-grid" id="actorsGrid"></div>
         </section>
 
-        <section class="process-status hidden" id="processStatus">
-            <h3>Processing</h3>
-            <div class="process-steps" id="processSteps"></div>
+        <hr class="section-divider">
+
+        <!--
+        <section class="harness-library" id="harnessLibrary">
+            <div class="harness-grid" id="harnessGrid">
+                <div class="harness-card" data-harness="tiktok">
+                    <div class="harness-badge">9:16</div>
+                    <h3>TikTok High-Energy</h3>
+                    <ul class="harness-sequence">
+                        <li><span>1</span> Generative Hook (3s)</li>
+                        <li><span>2</span> Archival Clip (4s)</li>
+                        <li><span>3</span> Archival Clip (4s)</li>
+                        <li><span>4</span> Branded Outro (4s)</li>
+                    </ul>
+                </div>
+
+                <div class="harness-card" data-harness="instagram">
+                    <div class="harness-badge">1:1</div>
+                    <h3>Instagram Aesthetic</h3>
+                    <ul class="harness-sequence">
+                        <li><span>1</span> Aesthetic Intro (4s)</li>
+                        <li><span>2</span> Narrative Clip (6s)</li>
+                        <li><span>3</span> Character Clip (6s)</li>
+                        <li><span>4</span> Clean CTA Outro (4s)</li>
+                    </ul>
+                </div>
+
+                <div class="harness-card" data-harness="pack">
+                    <div class="harness-badge">RAW</div>
+                    <h3>Creator Clip Kit</h3>
+                    <ul class="harness-sequence">
+                        <li><span>1</span> Metadata Card (5s)</li>
+                        <li><span>2</span> Dialogue Clip (8s)</li>
+                        <li><span>3</span> Action Clip (8s)</li>
+                        <li><span>4</span> Licensing Outro (3s)</li>
+                    </ul>
+                </div>
+            </div>
         </section>
+        -->
     </main>
 
     <script src="app.js"></script>

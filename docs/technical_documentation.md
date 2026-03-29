@@ -34,16 +34,27 @@ Tycho leverages **TwelveLabs Marengo 3.0** (via AWS Bedrock/SaaS) for multimodal
 *   **Temporal Understanding:** The system identifies precise start/end timestamps for every actor's appearance, facilitating automated clip extraction.
 
 ### 2.3 Modular Promotional Harnesses
-A core design principle of Tycho is the decoupling of **Discovery** from **Creative Packaging**.
-*   **The "Formula" System:** A Formula defines the structure of the output (e.g., Intro Length, Clip Duration, CTA Tone, Branding).
-*   **Harness Optimization:** Media managers can deploy multiple Harnesses (sets of Formulas) for a single actor. Over time, the system identifies the best-performing Talent/Platform/Formula combination.
-    *   *Nostalgia Harness:* Slow-paced, documentary style for Threads.
-    *   *Hype Harness:* Fast-cut, high-energy for TikTok.
+A core design principle of Tycho is the decoupling of **Discovery** from **Creative Packaging** through the "Harness" abstraction.
+*   **Harness Directory (`/harnesses`):** This directory contains JSON specifications that define the structure and content of promotional assets.
+*   **Modular "Formulas":** A Harness (e.g., `tiktok.json`) defines a `sequence` of items:
+    - **`generative`**: AI-generated video (LTX) using f-string prompts with IMDb data.
+    - **`clip`**: Specific archival segments with guidance for scene selection.
+*   **Industry-Standard Exports:** Every harness now specifies a set of required `exports` (e.g., **AAF** for Avid, **EDL** for Premiere/Resolve, and **MP4** for direct review). This allows for seamless hand-off to professional editors and influencers.
+*   **Harness Optimization:** Media managers can deploy multiple Harnesses for a single actor. Over time, the system identifies the best-performing Talent/Platform/Formula combination.
+    - *TikTok:* High-energy, 15s vertical sizzle.
+    - *Instagram:* Aesthetic, character-focused 1:1 reel.
+    - *Pack:* A "Creator Kit" containing high-quality clip libraries and branding for influencer reviews.
 
 ### 2.4 Creator Enablement Pipeline
 To drive organic traffic, Tycho can be configured to output "Clip Kits."
 *   **Automated Curation:** The system selects the top 5 highest-confidence scenes for a star.
 *   **Package Delivery:** These clips are bundled with metadata and "Did You Know?" facts from IMDb, ready to be sent to content creators and influencers for organic reviews.
+
+### 2.5 MAM/DAM System Integration
+Tycho is designed to operate as a "MAM-Native" service, automating the bridge between deep archives and modern distribution.
+*   **Automated Ingestion:** Support for direct ingestion from **MAM/DAM** systems (e.g., Dalet, Vantage) via watch folders or API triggers.
+*   **Metadata Round-Tripping:** Every generated asset includes a sidecar XML file (XMP/IPTC compliant) that maps IMDb metadata and TwelveLabs search confidence scores back into the parent MAM.
+*   **Direct Export to Production:** Beyond social assets, Tycho can push high-resolution clip sequences directly into **Avid Interplay** or **Adobe Premiere Pro Productions** via the generated AAF/EDL and sidecar metadata.
 
 ## 3. Implementation Details
 

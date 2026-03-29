@@ -73,6 +73,23 @@ function updateProcessStatus(steps) {
 // Event Listeners
 findContentBtn.addEventListener('click', handleContentSearch);
 imdbInput.addEventListener('input', validateImdbId);
+
+// Harness Library Interactivity
+document.querySelectorAll('.harness-card').forEach(card => {
+    card.addEventListener('click', () => {
+        // Remove selected class from all
+        document.querySelectorAll('.harness-card').forEach(c => c.classList.remove('selected'));
+        // Add to clicked
+        card.classList.add('selected');
+        // Update dropdown
+        const harness = card.dataset.harness;
+        document.getElementById('harnessSelect').value = harness;
+    });
+});
+
+// Initialize first harness as selected
+document.querySelector('.harness-card[data-harness="tiktok"]')?.classList.add('selected');
+
 imdbInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && findContentBtn.disabled === false) {
         handleContentSearch();
@@ -120,6 +137,7 @@ async function createProject(imdbId, videoPath = 'content.mp4') {
 }
 
 async function generateSpot(projectId, actorName, duration = 10) {
+    const harness = document.getElementById('harnessSelect').value;
     const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,6 +145,7 @@ async function generateSpot(projectId, actorName, duration = 10) {
             actor_name: actorName,
             duration: duration,
             resolution: '1920x1080',
+            harness: harness,
         }),
     });
     if (!response.ok) {

@@ -1,0 +1,31 @@
+{
+  "name": "instagram_v1",
+  "platform": "instagram",
+  "exports": ["AAF", "EDL", "MP4"],
+  "mam_integration": {
+    "system": "Dalet Galaxy",
+    "metadata_standard": "XMP"
+  },
+  "sequence": [
+    {
+      "type": "generative",
+      "duration": 4,
+      "prompt": "Aesthetic, nostalgic Instagram Reel intro for {actor_name}. Soft film grain, elegant typography: '{actor_name} in {title_text}'. Warm VO: 'Take a trip back to where it all began for {actor_name}.'"
+    },
+    {
+      "type": "clip",
+      "duration": 6,
+      "guidance": "A longer, more character-focused scene with {actor_name}"
+    },
+    {
+      "type": "clip",
+      "duration": 6,
+      "guidance": "A secondary iconic moment for {actor_name} that shows their range"
+    },
+    {
+      "type": "generative",
+      "duration": 4,
+      "prompt": "Clean, branded Instagram outro. Minimalist design: 'Stream {title_text} Now'. Sophisticated VO: '{title_text} is now streaming. Follow the link in our profile to watch.'"
+    }
+  ]
+}
