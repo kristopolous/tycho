@@ -53,6 +53,7 @@ import subprocess
 import sys
 import requests
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Set
 
@@ -69,6 +70,10 @@ from tmdb_client import get_headshots_for_actor
 
 # Global set to track in-progress discoveries to avoid redundant jobs
 discovery_in_progress: Set[str] = set()
+
+# Cache failures to avoid hammering APIs - key is {imdb_id}_{source}, value is timestamp
+discovery_failures: dict = {}
+FAILURE_CACHE_SECONDS = 300  # Don't retry failed discoveries for 5 minutes
 
 # Create main app
 app = FastAPI(
@@ -99,14 +104,24 @@ def discover_image_worker(imdb_id: str, source: str, talent_name: str, save_path
             url = imdb_image_url
             if not url:
                 print(f"[Discovery] No IMDb URL provided for {imdb_id}")
+                discovery_failures[job_key] = datetime.now().timestamp()
+                return
         elif source == "tmdb":
             # Fetch from TMDB API using talent name
             urls = get_headshots_for_actor(talent_name, imdb_id, max_images=1)
             if urls:
                 url = urls[0]
+            else:
+                print(f"[Discovery] TMDB returned no results for {talent_name} ({imdb_id})")
+                discovery_failures[job_key] = datetime.now().timestamp()
+                return
         elif source == "brave":
             # Fetch from Brave Image Search using talent name
             url = get_brave_headshot(talent_name)
+            if not url:
+                print(f"[Discovery] Brave returned no results for {talent_name} ({imdb_id})")
+                discovery_failures[job_key] = datetime.now().timestamp()
+                return
 
         if url:
             print(f"[Discovery] Fetching {source} image for {imdb_id}: {url[:80]}...")
@@ -119,6 +134,7 @@ def discover_image_worker(imdb_id: str, source: str, talent_name: str, save_path
 
     except Exception as e:
         print(f"[Discovery] Error discovering {source} for {imdb_id}: {e}")
+        discovery_failures[job_key] = datetime.now().timestamp()
     finally:
         if job_key in discovery_in_progress:
             discovery_in_progress.remove(job_key)
@@ -145,6 +161,21 @@ async def get_talent_image(filename: str):
         if len(parts) == 2:
             imdb_id, source = parts
             job_key = f"{imdb_id}_{source}"
+
+            # Check if this recently failed - don't hammer APIs
+            if job_key in discovery_failures:
+                failure_time = discovery_failures[job_key]
+                age = datetime.now().timestamp() - failure_time
+                if age < FAILURE_CACHE_SECONDS:
+                    # Still in cooldown - return 404 without retrying
+                    return JSONResponse(
+                        status_code=404,
+                        content={"detail": f"Image not available (recent failure, retry in {int(FAILURE_CACHE_SECONDS - age)}s)"}
+                    )
+                else:
+                    # Cooldown expired - remove from failure cache and retry
+                    del discovery_failures[job_key]
+                    print(f"[Discovery] Retry allowed for {job_key} after {age:.0f}s")
 
             if job_key not in discovery_in_progress:
                 # Look up actor data from project files first (using IMDb ID as key)

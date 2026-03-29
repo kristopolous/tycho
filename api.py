@@ -102,6 +102,8 @@ class ActorSpotResponse(BaseModel):
     actor_id: str
     birth_year: Optional[int]
     headshot_url: str
+    mise_en_scene: Optional[dict] = None  # Talent archetype: adjectives + emotional saliences
+    popularity_score: Optional[float] = None
     clips: List[ClipMatchResponse]
     generated_video: Optional[str]
     voiceover_script: Optional[str]
@@ -315,6 +317,8 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
                 actor_id=a["actor_id"],
                 birth_year=a.get("birth_year"),
                 headshot_url=a["headshot_url"],
+                mise_en_scene=a.get("mise_en_scene"),
+                popularity_score=a.get("popularity_score"),
                 clips=a.get("clips", []),
                 generated_video=a.get("generated_video"),
                 voiceover_script=a.get("voiceover_script"),
@@ -360,6 +364,8 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
                     actor_id=actor["actor_id"],
                     birth_year=actor.get("birth_year"),
                     headshot_url=actor["headshot_url"],
+                    mise_en_scene=actor.get("mise_en_scene"),
+                    popularity_score=actor.get("popularity_score"),
                     clips=actor.get("clips", []),
                 )
                 a["voiceover_script"] = request.prompt or orchestrator._generate_voiceover_prompt(actor_spot)

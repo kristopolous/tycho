@@ -41,6 +41,8 @@ class ActorSpot:
     birth_year: Optional[int]
     headshot_url: str
     clips: List[dict]  # Timestamps where actor appears
+    mise_en_scene: Optional[dict] = None  # Talent archetype: adjectives + emotional saliences
+    popularity_score: Optional[float] = None
     generated_video: Optional[str] = None
     voiceover_script: Optional[str] = None
 
@@ -260,12 +262,28 @@ class TychoOrchestrator:
                 # The UI should show all clips, generation will use first 3
                 print(f"[DEDUP] Saving all {len(unique_clips)} unique clips for {actor['name']}")
 
+                # Get talent archetype (mise_en_scene) from database
+                mise_en_scene = None
+                popularity_score = None
+                try:
+                    from talent_db import get_talent_with_images
+                    talent_data = get_talent_with_images(actor['name_id'], max_images=1)
+                    if talent_data:
+                        # mise_en_scene is nested under 'talent' key
+                        talent = talent_data.get('talent', {})
+                        mise_en_scene = talent.mise_en_scene if hasattr(talent, 'mise_en_scene') else talent.get('mise_en_scene') if isinstance(talent, dict) else None
+                        popularity_score = talent.popularity_score if hasattr(talent, 'popularity_score') else talent.get('popularity_score') if isinstance(talent, dict) else None
+                except Exception as e:
+                    print(f"      Warning: Could not fetch talent archetype: {e}")
+
                 spot = ActorSpot(
                     actor_name=actor['name'],
                     actor_id=actor['name_id'],
                     birth_year=birth_year,
                     headshot_url=headshot['url'],
                     clips=[asdict(c) for c in unique_clips],  # Save ALL clips!
+                    mise_en_scene=mise_en_scene,
+                    popularity_score=popularity_score,
                 )
                 actor_spots.append(spot)
                 # Print timestamps for each clip
@@ -276,13 +294,29 @@ class TychoOrchestrator:
                 birth_year = None
                 if actor.get('birth_date') and actor['birth_date'].get('year'):
                     birth_year = actor['birth_date']['year']
-                
+
+                # Get talent archetype for actors not found in video too
+                mise_en_scene = None
+                popularity_score = None
+                try:
+                    from talent_db import get_talent_with_images
+                    talent_data = get_talent_with_images(actor['name_id'], max_images=1)
+                    if talent_data:
+                        # mise_en_scene is nested under 'talent' key
+                        talent = talent_data.get('talent', {})
+                        mise_en_scene = talent.mise_en_scene if hasattr(talent, 'mise_en_scene') else talent.get('mise_en_scene') if isinstance(talent, dict) else None
+                        popularity_score = talent.popularity_score if hasattr(talent, 'popularity_score') else talent.get('popularity_score') if isinstance(talent, dict) else None
+                except Exception:
+                    pass
+
                 spot = ActorSpot(
                     actor_name=actor['name'],
                     actor_id=actor['name_id'],
                     birth_year=birth_year,
                     headshot_url=headshot['url'],
                     clips=[],
+                    mise_en_scene=mise_en_scene,
+                    popularity_score=popularity_score,
                 )
                 actor_spots.append(spot)
                 print(f"      {actor['name']}: Not found in video")

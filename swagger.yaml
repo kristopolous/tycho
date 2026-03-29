@@ -1,0 +1,699 @@
+openapi: 3.0.3
+info:
+  title: Tycho API
+  description: |
+    REST API for creating actor-focused promotional videos from archival content.
+    
+    ## Features
+    - Create projects from video files and IMDb titles
+    - Search for actors within video content using 12Labs
+    - Generate promotional spots using LTX
+    - Export clips in industry-standard formats (EDL, AAF, MAM XML)
+    
+    ## Workflow
+    1. Create a project with `POST /api/projects`
+    2. List actors found in the project with `GET /api/projects/{project_id}`
+    3. Generate a spot for a specific actor with `POST /api/projects/{project_id}/generate`
+    4. Export the clips in your preferred format with `POST /api/projects/{project_id}/export`
+  version: 1.0.0
+  contact:
+    name: Tycho Support
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+tags:
+  - name: Projects
+    description: Project management endpoints
+  - name: Videos
+    description: Video generation and retrieval
+  - name: Export
+    description: Export assets in various formats
+  - name: IMDb
+    description: IMDb data fetching
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Check if the API is running
+      operationId: healthCheck
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: OK
+                success: true
+
+  /api/projects:
+    post:
+      tags:
+        - Projects
+      summary: Create a new project
+      description: |
+        Create a new Tycho project. This initiates the full workflow:
+        1. Fetch cast from IMDb
+        2. Index video with 12Labs
+        3. Search for actors in video
+        4. Return project with found actors
+        
+        **Note:** If a project already exists for the same IMDb title ID, the cached project is returned.
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+            example:
+              video_path: ./content.mp4
+              imdb_title_id: tt0058331
+              actor_names:
+                - Marlon Brando
+              max_actors: 10
+              harness_name: nostalgia
+              platform: tiktok
+      responses:
+        '200':
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          description: Invalid request or video not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags:
+        - Projects
+      summary: List all projects
+      description: Get a list of all Tycho projects sorted by creation date (newest first)
+      operationId: listProjects
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectListItem'
+
+  /api/projects/{project_id}:
+    get:
+      tags:
+        - Projects
+      summary: Get project details
+      description: Retrieve detailed information about a specific project including all actors and their clips
+      operationId: getProject
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The unique identifier of the project
+          schema:
+            type: string
+            example: tycho_tt0058331_20240315_abc12345
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Projects
+      summary: Delete a project
+      description: Delete a project and all its associated assets (clips, generated videos, exports)
+      operationId: deleteProject
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The unique identifier of the project
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/projects/{project_id}/generate:
+    post:
+      tags:
+        - Videos
+      summary: Generate a promotional spot
+      description: |
+        Generate a promotional video spot for a specific actor in a project.
+        This creates a short video featuring the actor using LTX.
+      operationId: generateSpot
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The unique identifier of the project
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateSpotRequest'
+            example:
+              actor_name: Marlon Brando
+              actor_id: nm0000001
+              prompt: Classic crime drama intro
+              duration: 10
+              resolution: 1080p
+              harness_name: nostalgia
+              platform: tiktok
+      responses:
+        '200':
+          description: Spot generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorSpotResponse'
+        '400':
+          description: Invalid request or no clips found for actor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Project or actor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/projects/{project_id}/videos:
+    get:
+      tags:
+        - Videos
+      summary: List generated videos
+      description: Get all generated video spots for a project
+      operationId: listVideos
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The unique identifier of the project
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of generated videos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  videos:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        actor_name:
+                          type: string
+                        actor_id:
+                          type: string
+                        video_path:
+                          type: string
+                        video_url:
+                          type: string
+                        voiceover_script:
+                          type: string
+
+  /api/projects/{project_id}/video/{actor_id}:
+    get:
+      tags:
+        - Videos
+      summary: Stream a generated video
+      description: Stream or download a specific actor's generated video
+      operationId: getVideo
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The unique identifier of the project
+          schema:
+            type: string
+        - name: actor_id
+          in: path
+          required: true
+          description: The IMDb actor ID
+          schema:
+            type: string
+            example: nm0000001
+      responses:
+        '200':
+          description: Video file
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Project or video not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/projects/{project_id}/export:
+    post:
+      tags:
+        - Export
+      summary: Export actor clips
+      description: |
+        Export actor clips in industry-standard formats:
+        - **EDL**: CMX 3600 Edit Decision List
+        - **AAF**: Advanced Authoring Format (Avid compatible)
+        - **MAM**: Media Asset Management XML metadata
+      operationId: exportAssets
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The unique identifier of the project
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+            example:
+              actor_id: nm0000001
+              format: EDL
+              system: Avid
+      responses:
+        '200':
+          description: Export created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  format:
+                    type: string
+                    enum: [EDL, AAF, MAM]
+                  file_path:
+                    type: string
+                  file_url:
+                    type: string
+              example:
+                success: true
+                format: EDL
+                file_path: /outputs/tycho_.../exports/actor.edl
+                file_url: /api/projects/tycho_.../download/actor.edl
+        '400':
+          description: Invalid format or no clips found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Project or actor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/projects/{project_id}/download/{filename}:
+    get:
+      tags:
+        - Export
+      summary: Download export file
+      description: Download a previously generated export file (EDL, AAF, or MAM XML)
+      operationId: downloadExport
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The unique identifier of the project
+          schema:
+            type: string
+        - name: filename
+          in: path
+          required: true
+          description: The filename to download
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Export file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/imdb/cast/{imdb_title_id}:
+    get:
+      tags:
+        - IMDb
+      summary: Get IMDb cast
+      description: |
+        Fetch cast information from IMDb for a specific title.
+        Only returns actors with headshots for professional presentation.
+      operationId: getIMDBCast
+      parameters:
+        - name: imdb_title_id
+          in: path
+          required: true
+          description: IMDb title ID (e.g., tt0058331)
+          schema:
+            type: string
+            example: tt0058331
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of actors to return
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Cast information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imdb_title_id:
+                    type: string
+                  title:
+                    type: string
+                  year:
+                    type: integer
+                  type:
+                    type: string
+                  genres:
+                    type: array
+                    items:
+                      type: string
+                  rating:
+                    type: number
+                  plot:
+                    type: string
+                  poster_url:
+                    type: string
+                  cast_count:
+                    type: integer
+                  cast:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ActorCastInfo'
+        '500':
+          description: Error fetching cast data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    # Request Schemas
+    CreateProjectRequest:
+      type: object
+      required:
+        - video_path
+        - imdb_title_id
+      properties:
+        video_path:
+          type: string
+          description: Path to source video file
+          example: ./content.mp4
+        imdb_title_id:
+          type: string
+          description: IMDb title ID (e.g., tt0058331)
+          example: tt0058331
+        actor_names:
+          type: array
+          items:
+            type: string
+          description: Specific actors to focus on (optional)
+          example: ["Marlon Brando", "Al Pacino"]
+        max_actors:
+          type: integer
+          description: Maximum actors to process
+          default: 10
+          minimum: 1
+          maximum: 50
+        index_name:
+          type: string
+          description: Custom 12Labs index name (optional)
+        harness_name:
+          type: string
+          description: Harness/template name (e.g., 'nostalgia', 'hype')
+          example: nostalgia
+        platform:
+          type: string
+          description: Target platform (determines aspect ratio)
+          enum: [tiktok, youtube, instagram, linkedin, twitter]
+          example: tiktok
+
+    GenerateSpotRequest:
+      type: object
+      required:
+        - actor_name
+      properties:
+        actor_name:
+          type: string
+          description: Name of the actor
+          example: Marlon Brando
+        actor_id:
+          type: string
+          description: IMDb actor ID (optional, used if name is ambiguous)
+          example: nm0000001
+        prompt:
+          type: string
+          description: Custom prompt for video generation
+          example: Classic crime drama intro with dramatic lighting
+        duration:
+          type: integer
+          description: Video duration in seconds
+          default: 10
+          minimum: 3
+          maximum: 30
+        resolution:
+          type: string
+          description: Output resolution (auto-determined from platform if not provided)
+          enum: [720p, 1080p, 4k]
+        harness_name:
+          type: string
+          description: Override harness name for this generation
+        platform:
+          type: string
+          description: Override platform for this generation
+
+    ExportRequest:
+      type: object
+      required:
+        - actor_id
+        - format
+      properties:
+        actor_id:
+          type: string
+          description: IMDb actor ID
+          example: nm0000001
+        format:
+          type: string
+          description: Export format
+          enum: [EDL, AAF, MAM]
+          example: EDL
+        system:
+          type: string
+          description: Target system
+          default: Generic
+          enum: [Generic, Avid, Dalet, Final Cut Pro, Premiere]
+
+    # Response Schemas
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        success:
+          type: boolean
+          default: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+
+    ProjectListItem:
+      type: object
+      properties:
+        project_id:
+          type: string
+        imdb_title_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [processing, ready, error]
+        actors_count:
+          type: integer
+        generated_count:
+          type: integer
+
+    ProjectResponse:
+      type: object
+      properties:
+        project_id:
+          type: string
+        source_video:
+          type: string
+        source_video_id:
+          type: string
+        imdb_title_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [processing, ready, error]
+        actors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActorSpotResponse'
+        metadata:
+          type: object
+        title_text:
+          type: string
+        title_image_url:
+          type: string
+        harness_name:
+          type: string
+        platform:
+          type: string
+
+    ActorSpotResponse:
+      type: object
+      properties:
+        actor_name:
+          type: string
+        actor_id:
+          type: string
+        birth_year:
+          type: integer
+          nullable: true
+        headshot_url:
+          type: string
+        clips:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClipMatchResponse'
+        generated_video:
+          type: string
+          nullable: true
+        voiceover_script:
+          type: string
+          nullable: true
+
+    ClipMatchResponse:
+      type: object
+      properties:
+        video_id:
+          type: string
+        start:
+          type: number
+          format: float
+          description: Start time in seconds
+        end:
+          type: number
+          format: float
+          description: End time in seconds
+        score:
+          type: number
+          format: float
+          description: Relevance score (0-1)
+        actor_name:
+          type: string
+        actor_id:
+          type: string
+
+    ActorCastInfo:
+      type: object
+      properties:
+        name_id:
+          type: string
+          description: IMDb name ID
+          example: nm0000001
+        name:
+          type: string
+        category:
+          type: string
+          description: Role category (actor, director, etc.)
+        characters:
+          type: array
+          items:
+            type: string
+          description: Character names played
+        birth_year:
+          type: integer
+          nullable: true
+        headshot_url:
+          type: string
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key

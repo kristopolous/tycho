@@ -256,10 +256,24 @@ async function handleContentSearch() {
 function displayContent(castData, project) {
     contentTitle.innerHTML = `<div class="title-header"><h2>${castData.title}</h2></div>`;
     const foundActors = project.actors?.filter(a => a.clips && a.clips.length > 0) || [];
-    
+
+    // Merge project.actors data (mise_en_scene, popularity_score) with castData.cast
+    const projectActorsById = {};
+    project.actors?.forEach(a => {
+        projectActorsById[a.actor_id] = a;
+    });
+
     actorsGrid.innerHTML = castData.cast.map(actor => {
         const actorData = foundActors.find(a => a.actor_id === actor.name_id);
         const isFound = !!actorData;
+
+        // Merge mise_en_scene and popularity_score from project data
+        const projectActor = projectActorsById[actor.name_id];
+        const mergedActor = {
+            ...actor,
+            mise_en_scene: projectActor?.mise_en_scene || actor.mise_en_scene,
+            popularity_score: projectActor?.popularity_score || actor.popularity_score,
+        };
         
         let thumbnailsHtml = '';
         if (isFound) {
@@ -294,20 +308,20 @@ function displayContent(castData, project) {
             </div>`;
         }).join('');
         referenceImagesHtml = `<div class="reference-images-strip">${images}</div>`;
-        
+
         return `
         <div class="actor-card fade-in" data-actor-id="${actor.name_id}">
-            <img src="${actor.headshot_url || 'https://via.placeholder.com/300x400?text=No+Image'}" onerror="this.src='https://via.placeholder.com/300x400?text=No+Image'}" class="main-headshot">
+            <img src="${mergedActor.headshot_url || 'https://via.placeholder.com/300x400?text=No+Image'}" onerror="this.src='https://via.placeholder.com/300x400?text=No+Image'}" class="main-headshot">
             <div class="actor-info">
                 <div class="actor-header-row">
-                    <h3>${actor.name}</h3>
-                    ${actor.popularity_score ? `<span class="star-power">★ ${actor.popularity_score.toFixed(1)}</span>` : ''}
+                    <h3>${mergedActor.name}</h3>
+                    ${mergedActor.popularity_score ? `<span class="star-power">★ ${mergedActor.popularity_score.toFixed(1)}</span>` : ''}
                 </div>
-                <p class="character">${actor.characters?.join(', ') || ''}</p>
+                <p class="character">${mergedActor.characters?.join(', ') || ''}</p>
 
-                ${actor.mise_en_scene ? `
+                ${mergedActor.mise_en_scene ? `
                     <div class="talent-archetype">
-                        ${(typeof actor.mise_en_scene === 'string' ? JSON.parse(actor.mise_en_scene) : actor.mise_en_scene).adjectives?.map(t => `<span class="archetype-tag">${t}</span>`).join('') || ''}
+                        ${(typeof mergedActor.mise_en_scene === 'string' ? JSON.parse(mergedActor.mise_en_scene) : mergedActor.mise_en_scene).adjectives?.map(t => `<span class="archetype-tag">${t}</span>`).join('') || ''}
                     </div>
                 ` : `
                     <div class="talent-archetype">
