@@ -355,6 +355,73 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/api/projects/{project_id}/export")
+async def export_assets(project_id: str, request: ExportRequest):
+    """
+    Export actor clips in industry-standard formats (EDL, AAF, or MAM XML).
+    """
+    project_data = load_project(project_id)
+    if not project_data:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Find the actor
+    actor = None
+    for a in project_data.get("actors", []):
+        if a["actor_id"] == request.actor_id:
+            actor = a
+            break
+    
+    if not actor:
+        raise HTTPException(status_code=404, detail=f"Actor not found: {request.actor_id}")
+    
+    if not actor.get("clips"):
+        raise HTTPException(status_code=400, detail="No clips found for this actor")
+
+    try:
+        file_path = ""
+        format_type = request.format.upper()
+        
+        if format_type == "EDL":
+            file_path = export_engine.generate_edl(
+                project_id, actor["actor_id"], actor["actor_name"], 
+                actor["clips"], project_data["source_video"]
+            )
+        elif format_type == "AAF":
+            file_path = export_engine.generate_aaf(
+                project_id, actor["actor_id"], actor["actor_name"], 
+                actor["clips"], project_data["source_video"]
+            )
+        elif format_type == "MAM":
+            file_path = mam_engine.generate_sidecar_xml(
+                project_id, actor, project_data
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {request.format}")
+
+        return {
+            "success": True,
+            "format": format_type,
+            "file_path": str(file_path),
+            "file_url": f"/api/projects/{project_id}/download/{Path(file_path).name}"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/projects/{project_id}/download/{filename}")
+async def download_export(project_id: str, filename: str):
+    """Download a generated export file."""
+    file_path = OUTPUT_DIR / project_id / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    return FileResponse(
+        str(file_path),
+        filename=filename
+    )
+
+
 @router.get("/api/projects/{project_id}/videos")
 async def list_videos(project_id: str):
     """List all generated videos for a project."""
