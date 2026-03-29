@@ -455,19 +455,27 @@ input:focus {
     margin: 0.75rem 0;
 }
 
-.clip-thumbnail {
-    width: 100%;
-    aspect-ratio: 16/9;
-    object-fit: cover;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    transition: transform 0.2s;
+.clip-thumb-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
 }
 
-.clip-thumbnail:hover {
-    transform: scale(1.05);
-    border-color: var(--primary);
+.clip-thumbnail {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16/9;
+    object-fit: contain;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: #000;
+}
+
+.clip-time {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-align: center;
+    font-family: monospace;
 }
 
 .status-indicator {

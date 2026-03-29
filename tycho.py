@@ -113,11 +113,11 @@ class TychoOrchestrator:
         if index_name is None:
             # Use consistent index name based on tt_id for reuse
             index_name = f"tycho_{imdb_title_id}"
-        
+
         self.twelvelabs.create_index(index_name)
         
-        # Check if we already have a video indexed (from previous run)
-        # by checking if any videos exist in the index
+        # ALWAYS check for existing video first - this should be instant
+        video_id = None
         try:
             videos = list(self.twelvelabs.client.indexes.videos.list(
                 index_id=self.twelvelabs.index_id,
@@ -125,13 +125,15 @@ class TychoOrchestrator:
             ))
             if videos:
                 video_id = videos[0].id
-                print(f"[12Labs] Reusing existing video: {video_id}")
-            else:
-                # No existing video, upload new one
-                video_id = self.twelvelabs.upload_video(video_path)
+                print(f"[12Labs] ✓ Reusing existing video: {video_id}")
         except Exception as e:
-            print(f"[12Labs] Could not check existing videos: {e}")
+            print(f"[12Labs] Warning: Could not check existing videos: {type(e).__name__}: {e}")
+        
+        # Only upload if no existing video found
+        if not video_id:
+            print(f"[12Labs] No existing video found, uploading...")
             video_id = self.twelvelabs.upload_video(video_path)
+        # else: video_id already set from existing video
         
         # Step 3: Search for each actor in the video
         print("\n[Step 3/5] Searching for actors in video...")
@@ -146,13 +148,13 @@ class TychoOrchestrator:
             # Download headshot if it's a URL
             headshot_path = self._download_image(headshot['url'], actor['name_id'])
             
-            # Search for this actor in the video
+            # Search for this actor in the video - request more results to get diverse clips
             try:
                 clips = self.twelvelabs.search_actor_in_video(
                     headshot_path=headshot_path,
                     actor_name=actor['name'],
                     actor_id=actor['name_id'],
-                    max_results=5,
+                    max_results=20,  # Get more results to find diverse clips
                 )
             except Exception as e:
                 print(f"      {actor['name']}: Search error - {e}")
@@ -163,15 +165,42 @@ class TychoOrchestrator:
                 if actor.get('birth_date') and actor['birth_date'].get('year'):
                     birth_year = actor['birth_date']['year']
 
+                # Deduplicate clips by start time (API sometimes returns duplicates)
+                print(f"\n[DEDUP] Processing {len(clips)} clips for {actor['name']}")
+                seen_times = set()
+                unique_clips = []
+                for c in clips:
+                    key = (round(c.start, 1), round(c.end, 1))
+                    print(f"[DEDUP]   Checking: {c.start:.1f}-{c.end:.1f}s -> key={key}, seen={key in seen_times}")
+                    if key not in seen_times:
+                        seen_times.add(key)
+                        unique_clips.append(c)
+                        print(f"[DEDUP]     ✓ Added (unique)")
+                    else:
+                        print(f"[DEDUP]     ✗ Skipped (duplicate)")
+                
+                print(f"[DEDUP] Found {len(unique_clips)} unique clips out of {len(clips)} total")
+                
+                # Take up to 3 diverse clips (spread across video if possible)
+                if len(unique_clips) > 3:
+                    # Try to get clips spread across the video
+                    selected_clips = [unique_clips[0], unique_clips[len(unique_clips)//2], unique_clips[-1]]
+                    print(f"[DEDUP] Selected 3 diverse clips: {[f'{c.start:.1f}-{c.end:.1f}s' for c in selected_clips]}")
+                else:
+                    selected_clips = unique_clips[:3]
+                    print(f"[DEDUP] Using all {len(selected_clips)} unique clips")
+
                 spot = ActorSpot(
                     actor_name=actor['name'],
                     actor_id=actor['name_id'],
                     birth_year=birth_year,
                     headshot_url=headshot['url'],
-                    clips=[asdict(c) for c in clips],
+                    clips=[asdict(c) for c in selected_clips],
                 )
                 actor_spots.append(spot)
-                print(f"      {actor['name']}: Found {len(clips)} clips")
+                # Print timestamps for each clip
+                clip_times = ', '.join([f"{c.start:.1f}-{c.end:.1f}s" for c in selected_clips])
+                print(f"      {actor['name']}: Found {len(selected_clips)} clips [{clip_times}]")
             else:
                 # Include actor even if not found - UI will show "not found" state
                 birth_year = None

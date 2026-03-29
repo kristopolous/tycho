@@ -163,26 +163,18 @@ class TwelveLabsClient:
         headshot_path: str,
         actor_name: str,
         actor_id: str,
-        max_results: int = 10
+        max_results: int = 20
     ) -> List[ClipMatch]:
         """
         Search for an actor in indexed videos using their headshot.
-        
-        Args:
-            headshot_path: Path to the actor's headshot image
-            actor_name: Name of the actor (for labeling)
-            actor_id: IMDb ID of the actor
-            max_results: Maximum number of clips to return
-        
-        Returns:
-            List of ClipMatch objects with timestamps
         """
         if not os.path.exists(headshot_path):
             raise FileNotFoundError(f"Headshot not found: {headshot_path}")
-        
-        print(f"[12Labs] Searching for {actor_name} in video...")
 
-        # Use query_media_file for local file search
+        print(f"\n[12Labs] {'='*60}")
+        print(f"[12Labs] Searching for {actor_name} in video...")
+        print(f"[12Labs] Headshot: {headshot_path}")
+
         try:
             with open(headshot_path, "rb") as f:
                 search_results = self.client.search.query(
@@ -192,14 +184,27 @@ class TwelveLabsClient:
                     query_media_file=f,
                 )
 
+            # LOG EVERY SINGLE CLIP FROM API
+            print(f"[12Labs] RAW API RESPONSE - All clips:")
+            raw_clips = []
+            for i, clip in enumerate(search_results):
+                start = getattr(clip, 'start', None)
+                end = getattr(clip, 'end', None)
+                video_id = getattr(clip, 'video_id', None)
+                rank = getattr(clip, 'rank', None)
+                raw_clips.append({'i': i, 'start': start, 'end': end, 'video_id': video_id, 'rank': rank})
+                print(f"[12Labs]   [{i:2d}] start={start:7.2f}  end={end:7.2f}  video={video_id[:12] if video_id else 'N/A':12}  rank={rank}")
+            
+            print(f"[12Labs] Total from API: {len(raw_clips)} clips")
+            print(f"[12Labs] {'='*60}\n")
+
+            # Process into ClipMatch
             clips = []
             for i, clip in enumerate(search_results):
                 if i >= max_results:
                     break
 
-                # Use rank for Marengo 3.0+, score for older versions
                 confidence = getattr(clip, 'rank', getattr(clip, 'score', 0))
-                # Invert rank so higher is better (rank 1 = best)
                 if hasattr(clip, 'rank') and clip.rank:
                     confidence = 1.0 / clip.rank
 
@@ -213,9 +218,11 @@ class TwelveLabsClient:
                 ))
         except Exception as e:
             print(f"[12Labs] Search failed: {e}")
+            import traceback
+            traceback.print_exc()
             clips = []
-        
-        print(f"[12Labs] Found {len(clips)} clips for {actor_name}")
+
+        print(f"[12Labs] Processed into {len(clips)} ClipMatch objects")
         return clips
     
     def list_videos(self) -> List[dict]:

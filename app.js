@@ -23,6 +23,7 @@ const processSteps = document.getElementById('processSteps');
 let currentProject = null;
 let currentActors = [];
 let currentImdbId = null;
+let isProcessing = false;  // Prevent duplicate submissions
 
 // Persist state to localStorage
 function saveState() {
@@ -75,19 +76,6 @@ imdbInput.addEventListener('input', validateImdbId);
 imdbInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && findContentBtn.disabled === false) {
         handleContentSearch();
-    }
-});
-
-// Restore state on page load
-window.addEventListener('DOMContentLoaded', () => {
-    if (restoreState() && currentProject) {
-        // Fetch cast data to display
-        fetchCastFromIMDB(currentImdbId).then(castData => {
-            displayContent(castData, currentProject, true);
-        }).catch(e => {
-            console.error('Failed to fetch cast for restored project:', e);
-            localStorage.removeItem('tycho_project');
-        });
     }
 });
 
@@ -162,9 +150,24 @@ async function handleContentSearch() {
     const videoPath = videoPathInput.value.trim() || DEFAULT_VIDEO;
     if (!imdbId) return;
 
+    // Prevent duplicate submissions
+    if (isProcessing) {
+        console.log('Already processing a request, ignoring duplicate click');
+        return;
+    }
+
+    // Check if we already have a project for this IMDb ID (client-side cache)
+    if (currentProject && currentImdbId === imdbId) {
+        console.log('Already have project for this IMDb ID, restoring from memory');
+        displayContent(await fetchCastFromIMDB(imdbId), currentProject, true);
+        return;
+    }
+
+    isProcessing = true;
+    findContentBtn.disabled = true;
+    findContentBtn.textContent = 'Processing...';
+
     try {
-        findContentBtn.disabled = true;
-        
         // Show process status
         updateProcessStatus([
             { status: 'active', text: 'Fetching cast from IMDb...', detail: '' },
@@ -203,6 +206,7 @@ async function handleContentSearch() {
             { status: 'error', text: 'Error: ' + error.message, detail: '' },
         ]);
     } finally {
+        isProcessing = false;
         findContentBtn.disabled = false;
         findContentBtn.textContent = 'Find Content';
     }
@@ -237,13 +241,15 @@ function displayContent(castData, project, restored = false) {
         let thumbnailsHtml = '';
         if (isFound && actorData?.clips?.length > 0) {
             const thumbnails = actorData.clips.slice(0, 3).map((clip, i) => 
-                `<img src="/thumbnails/${currentImdbId}_${clip.start.toFixed(1)}.jpg" 
-                     class="clip-thumbnail" 
-                     alt="Clip ${i + 1}"
-                     title="${clip.start.toFixed(1)}s - ${clip.end.toFixed(1)}s"
-                     onerror="this.style.display='none'">`
+                `<div class="clip-thumb-wrapper">
+                    <img src="/thumbnails/${currentImdbId}_${clip.start.toFixed(1)}.jpg" 
+                         class="clip-thumbnail" 
+                         alt="Clip ${i + 1}"
+                         onerror="this.style.display='none'">
+                    <span class="clip-time">${clip.start.toFixed(1)}s - ${clip.end.toFixed(1)}s</span>
+                </div>`
             ).join('');
-            thumbnailsHtml = `<div class="clip-thumbnails">${thumbnails}</div>`;
+            thumbnailsHtml = `<div class="clip-thumbnails" style="grid-template-columns: repeat(${actorData.clips.length}, 1fr);">${thumbnails}</div>`;
         }
         
         return `
@@ -384,8 +390,7 @@ function initializeGeneration(project) {
 }
 
 function getVideoUrl(projectId, actorId) {
-    const baseUrl = window.API_BASE_URL || API_BASE_URL;
-    return `${baseUrl}/api/projects/${projectId}/video/${actorId}`;
+    return `${API_BASE_URL}/api/projects/${projectId}/video/${actorId}`;
 }
 
 // Global function for button clicks

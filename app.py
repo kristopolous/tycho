@@ -19,8 +19,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Import API routes
-from api import app as api_app
+# Import API router
+from api import router as api_router
 
 # Create main app
 app = FastAPI(
@@ -48,10 +48,11 @@ FRONTEND_DIR = BASE_DIR
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Mount static files
-app.mount("/api", api_app)
+# Mount static files for videos
 app.mount("/videos", StaticFiles(directory=str(OUTPUT_DIR)), name="videos")
-app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
+
+# Include API routes (they already have /api prefix in their paths)
+app.include_router(api_router)
 
 
 # ============== Frontend Routes ==============
@@ -60,6 +61,15 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 async def root():
     """Serve the main frontend page."""
     return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+# Serve static frontend files (CSS, JS, etc.)
+@app.get("/style.css")
+async def style_css():
+    return FileResponse(str(FRONTEND_DIR / "style.css"))
+
+@app.get("/app.js")
+async def app_js():
+    return FileResponse(str(FRONTEND_DIR / "app.js"))
 
 
 # ============== Thumbnail Generation ==============

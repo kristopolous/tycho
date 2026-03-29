@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,21 +34,8 @@ from twelvelabs_client import TwelveLabsClient
 from ltx_client import LTXClient
 from tycho import TychoOrchestrator, TychoProject, ActorSpot
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Tycho API",
-    description="Create actor-focused promotional videos from archival content",
-    version="1.0.0",
-)
-
-# Enable CORS for frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Create API router with /api prefix
+router = APIRouter()
 
 # Configuration
 OUTPUT_DIR = Path(__file__).parent / "outputs"
@@ -57,10 +44,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # Thumbnail cache directory
 THUMBNAIL_CACHE_DIR = OUTPUT_DIR / "thumbnails"
 THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# Mount static files for video playback
-app.mount("/videos", StaticFiles(directory=str(OUTPUT_DIR)), name="videos")
-app.mount("/thumbnails", StaticFiles(directory=str(THUMBNAIL_CACHE_DIR)), name="thumbnails")
 
 # Initialize orchestrator
 orchestrator = TychoOrchestrator(output_dir=str(OUTPUT_DIR))
@@ -168,29 +151,39 @@ def get_all_projects() -> List[dict]:
 
 # ============== API Endpoints ==============
 
-@app.get("/", response_model=MessageResponse)
-async def root():
-    """API health check."""
-    return {"message": "Tycho API is running", "success": True}
 
-
-@app.get("/api/health", response_model=MessageResponse)
+@router.get("/api/health", response_model=MessageResponse)
 async def health_check():
     """Health check endpoint."""
     return {"message": "OK", "success": True}
 
 
-@app.post("/api/projects", response_model=ProjectResponse)
+@router.post("/api/projects", response_model=ProjectResponse)
 async def create_project(request: CreateProjectRequest):
     """
     Create a new Tycho project.
-    
+
     This initiates the full workflow:
     1. Fetch cast from IMDb
     2. Index video with 12Labs
     3. Search for actors in video
     4. Return project with found actors (generation is separate)
     """
+    # CRITICAL: Check if project already exists - PREVENTS DUPLICATE 12LABS API CALLS
+    existing_projects = get_all_projects()
+    print(f"\n{'='*60}")
+    print(f"[CACHE CHECK] imdb_title_id={request.imdb_title_id}")
+    print(f"[CACHE CHECK] Found {len(existing_projects)} existing projects")
+    for proj in existing_projects:
+        proj_id = proj.get("imdb_title_id")
+        print(f"[CACHE CHECK]   Checking: {proj_id}")
+        if proj_id == request.imdb_title_id:
+            print(f"[CACHE HIT] ✓✓✓ RETURNING CACHED PROJECT ✓✓✓")
+            print(f"{'='*60}\n")
+            return ProjectResponse(**proj)
+    print(f"[CACHE MISS] No cache found - proceeding with 12Labs API calls")
+    print(f"{'='*60}\n")
+
     # Validate video exists
     video_path = Path(request.video_path)
     if not video_path.exists():
@@ -232,7 +225,7 @@ async def create_project(request: CreateProjectRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/projects", response_model=List[ProjectListItem])
+@router.get("/api/projects", response_model=List[ProjectListItem])
 async def list_projects():
     """List all Tycho projects."""
     projects = get_all_projects()
@@ -249,7 +242,7 @@ async def list_projects():
     ]
 
 
-@app.get("/api/projects/{project_id}", response_model=ProjectResponse)
+@router.get("/api/projects/{project_id}", response_model=ProjectResponse)
 async def get_project(project_id: str):
     """Get details for a specific project."""
     project_data = load_project(project_id)
@@ -258,7 +251,7 @@ async def get_project(project_id: str):
     return ProjectResponse(**project_data)
 
 
-@app.post("/api/projects/{project_id}/generate", response_model=ActorSpotResponse)
+@router.post("/api/projects/{project_id}/generate", response_model=ActorSpotResponse)
 async def generate_spot(project_id: str, request: GenerateSpotRequest):
     """
     Generate a promotional spot for a specific actor.
@@ -318,7 +311,7 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/projects/{project_id}/videos")
+@router.get("/api/projects/{project_id}/videos")
 async def list_videos(project_id: str):
     """List all generated videos for a project."""
     project_data = load_project(project_id)
@@ -342,7 +335,7 @@ async def list_videos(project_id: str):
     return {"videos": videos}
 
 
-@app.get("/api/projects/{project_id}/video/{actor_id}")
+@router.get("/api/projects/{project_id}/video/{actor_id}")
 async def get_video(project_id: str, actor_id: str):
     """Stream a specific actor's generated video."""
     project_data = load_project(project_id)
@@ -367,7 +360,7 @@ async def get_video(project_id: str, actor_id: str):
     )
 
 
-@app.delete("/api/projects/{project_id}", response_model=MessageResponse)
+@router.delete("/api/projects/{project_id}", response_model=MessageResponse)
 async def delete_project(project_id: str):
     """Delete a project and all its assets."""
     project_dir = OUTPUT_DIR / project_id
@@ -381,7 +374,7 @@ async def delete_project(project_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/imdb/cast/{imdb_title_id}")
+@router.get("/api/imdb/cast/{imdb_title_id}")
 async def get_imdb_cast(imdb_title_id: str, limit: int = 20):
     """
     Fetch cast information from IMDb for a title.
@@ -423,20 +416,6 @@ async def get_imdb_cast(imdb_title_id: str, limit: int = 20):
 
 # ============== Error Handlers ==============
 
-@app.exception_handler(404)
-async def not_found_handler(request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={"detail": "Not found", "success": False},
-    )
-
-
-@app.exception_handler(500)
-async def internal_error_handler(request, exc):
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error", "success": False},
-    )
 
 
 # ============== Main ==============
