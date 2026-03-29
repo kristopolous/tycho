@@ -233,16 +233,23 @@ function displayContent(castData, project) {
             thumbnailsHtml = `<div class="clip-thumbnails">${thumbnails}</div>`;
         }
 
-        // Multi-source Reference Images
+        // Multi-source Reference Images (IMDb, TMDB, Brave)
         let referenceImagesHtml = '';
         const headshots = actor.all_headshots || (actor.headshot_url ? [actor.headshot_url] : []);
         if (headshots.length > 0) {
-            const images = headshots.map((url, i) => `
+            const images = headshots.map((url, i) => {
+                let source = 'Source';
+                if (url.includes('media-amazon.com')) source = 'IMDb';
+                else if (url.includes('tmdb.org') || url.includes('themoviedb.org')) source = 'TMDB';
+                else if (i === headshots.length - 1 && headshots.length > 2) source = 'Brave';
+                else source = i === 0 ? 'IMDb' : 'Alt';
+
+                return `
                 <div class="ref-image-wrapper">
-                    <img src="${url}" class="ref-image" title="${i === 0 ? 'IMDb' : 'TMDB'} Source">
-                    <span class="ref-source-tag">${i === 0 ? 'IMDb' : 'TMDB'}</span>
-                </div>
-            `).join('');
+                    <img src="${url}" class="ref-image" title="${source} Source">
+                    <span class="ref-source-tag">${source}</span>
+                </div>`;
+            }).join('');
             referenceImagesHtml = `<div class="reference-images-strip">${images}</div>`;
         }
         

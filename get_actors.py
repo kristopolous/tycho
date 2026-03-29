@@ -388,6 +388,16 @@ def fetch_cast_with_images(title_id: str, limit: int = 20, use_tmdb: bool = Fals
         elif primary_image_url:
             all_headshots = [primary_image_url]
         
+        # Add Brave 'isolated' headshot if enabled
+        if BRAVE_AVAILABLE:
+            try:
+                brave_img = get_brave_headshot(actor_name)
+                if brave_img and brave_img not in all_headshots:
+                    all_headshots.append(brave_img)
+                    print(f"            Added Brave isolated headshot")
+            except Exception as e:
+                print(f"            Error fetching Brave headshot: {e}")
+        
         cast_member = {
             "name_id": name_id,
             "name": actor_name,
