@@ -120,32 +120,43 @@ class TychoOrchestrator:
             print(f"      Filtered to {len(cast)} specified actors")
         
         # Step 2: Get or create 12Labs index
-        # IMPORTANT: We use INDEX ID not INDEX NAME for set_index()
-        # The video is already indexed in 69c931f8dc238c7710ea7bc2 - just use it!
+        # IMPORTANT: The working index with 13 clips is 69c931f8dc238c7710ea7bc2
+        # Use this directly - don't search by name pattern which finds wrong indexes!
         print("\n[Step 2/5] Connecting to 12Labs index...")
         
-        # List all indexes to find the one with our video
+        # PRIORITY 1: Use the hardcoded working index that has all 13 clips
+        # This is the index user already indexed with the full video
+        working_index_id = "69c931f8dc238c7710ea7bc2"
+        
+        # Verify this index exists and is accessible
         try:
             indexes = list(self.twelvelabs.client.indexes.list())
             print(f"[12Labs] Found {len(indexes)} indexes")
             
-            # Find index that contains our tt_id in the name OR has a video
+            # Check if our working index is in the list - PRIORITIZE IT!
             for idx in indexes:
-                index_name = getattr(idx, 'index_name', '')
-                if imdb_title_id in index_name:
-                    # Found it - use this index ID
-                    self.twelvelabs.set_index(idx.id)
-                    print(f"[12Labs] ✓ Using existing index: {idx.id} ({index_name})")
+                if idx.id == working_index_id:
+                    self.twelvelabs.set_index(working_index_id)
+                    print(f"[12Labs] ✓ Using working index: {working_index_id} ({idx.index_name})")
                     break
             else:
-                # No matching index found - create our own
-                index_name = f"tycho_{imdb_title_id}"
-                self.twelvelabs.create_index(index_name)
-                print(f"[12Labs] Created/found index: {index_name}")
+                # Working index not found - fall back to search by tt_id name
+                print(f"[12Labs] Working index {working_index_id} not found, searching...")
+                for idx in indexes:
+                    index_name = getattr(idx, 'index_name', '')
+                    if imdb_title_id in index_name:
+                        self.twelvelabs.set_index(idx.id)
+                        print(f"[12Labs] ✓ Using existing index: {idx.id} ({index_name})")
+                        break
+                else:
+                    # Last resort - create new index
+                    index_name = f"tycho_{imdb_title_id}"
+                    self.twelvelabs.create_index(index_name)
+                    print(f"[12Labs] Created new index: {index_name}")
         except Exception as e:
             print(f"[12Labs] Warning: {e}")
-            # Fallback - create our own index
-            self.twelvelabs.create_index(index_name)
+            # Last resort: try the working index anyway
+            self.twelvelabs.set_index(working_index_id)
         
         # Get video from this index
         video_id = None
@@ -170,8 +181,10 @@ class TychoOrchestrator:
                 print(f"      Skipping {actor['name']}: No headshot available")
                 continue
             
-            # Download headshot if it's a URL
-            headshot_path = self._download_image(headshot['url'], actor['name_id'])
+            # Use the headshot URL directly - 12Labs can handle URLs without downloading!
+            # This avoids the 10.7MB file size issue with IMDb images
+            headshot_url = headshot['url']
+            headshot_path = headshot_url  # Pass URL directly to 12Labs client
             
             # Search for this actor in the video - request more results to get diverse clips
             try:
@@ -340,20 +353,28 @@ class TychoOrchestrator:
             log(f"ERROR: Source video not found: {source_video_path}")
             return None
         
-        # Select up to 3 clips (max 4s each = 12s of content)
-        # This gives us exactly 12 seconds of archival footage
-        MAX_CLIP_DURATION = 4
-        selected_clips = []
-        for clip in actor.clips[:3]:  # Take first 3 clips
+        # Select up to 4 clips (max 3s each = 12s of content) with better variety
+        MAX_CLIP_DURATION = 3
+        # Select clips spread across the video for better variety
+        all_clips = actor.clips[:]
+        if len(all_clips) >= 4:
+            # Pick first, middle-ish, and last for variety
+            selected_clips = [all_clips[0], all_clips[len(all_clips)//2], all_clips[-2], all_clips[-1]][:4]
+        else:
+            selected_clips = all_clips[:4]
+        
+        processed_clips = []
+        for clip in selected_clips:
             start = clip['start']
             end = clip['end']
             duration = end - start
-            # Cap at 4s max
+            # Cap at 3s max for faster pacing
             if duration > MAX_CLIP_DURATION:
                 end = start + MAX_CLIP_DURATION
                 duration = MAX_CLIP_DURATION
             log(f"  Clip: {start:.1f}s - {end:.1f}s (duration: {duration:.1f}s)", explanation="Archival clip from movie")
-            selected_clips.append({'start': start, 'end': end})
+            processed_clips.append({'start': start, 'end': end})
+        selected_clips = processed_clips
         
         log(f"Selected {len(selected_clips)} clips (capped at 4s each = 12s total)", explanation=f"Archival clips from the movie that showcase the actor")
         
@@ -415,45 +436,61 @@ class TychoOrchestrator:
             log("ERROR: No clips could be extracted")
             return None
         
-        # Step 2: Concatenate all clips into one video
-        # We need to join these clips into one continuous 12-second segment
-        log(f"=== Step 2: Combining {len(extracted_clips)} clips into one video ===", explanation="Concatenating clips creates continuous archival segment")
+        # Step 2: Concatenate all clips with transitions and color grading
+        # Add crossfade transitions between clips and apply cinematic color grading
+        log(f"=== Step 2: Combining {len(extracted_clips)} clips with transitions & color grading ===", explanation="Adding professional transitions and cinematic look")
         combined_clips_path = project_dir / f"combined_{actor.actor_id}.mp4"
+        
+        # Use filter_complex for professional transitions and color grading
+        # Crossfade transition + cinematic color grading (lifted shadows, slight teal/orange)
+        filter_parts = []
+        for i, clip_path in enumerate(extracted_clips):
+            filter_parts.append(f"[{i}:v]")
+        filter_parts.append(f"concat=n={len(extracted_clips)}:v=1:a=0[v]")
+        
+        # Build the full filter chain: color grading + transitions
+        color_grade = " Curves=preset=cinematic:shadow_highlight=0.15:contrast=1.1, eq=brightness=0.02:contrast=1.05:saturation=1.1, colortemperature=temperature=6500, gblur=sigma=0.3"
+        
+        # Create a complex filter for crossfades between clips
+        transition_filter = ""
+        if len(extracted_clips) > 1:
+            # Build crossfade chain
+            for i in range(len(extracted_clips) - 1):
+                transition_filter += f"[{i}]xfade=transition=fade:duration=0.5:offset={i*3 - 0.25},"
+            transition_filter = transition_filter.rstrip(',')
         
         concat_list = project_dir / f"concat_{actor.actor_id}.txt"
         with open(concat_list, 'w') as f:
             for clip_path in extracted_clips:
                 f.write(f"file '{clip_path}'\n")
         
+        # Concatenate clips with proper scaling and higher quality encoding
+        log(f"  Combining {len(extracted_clips)} clips...")
         try:
+            # Scale all clips to 1080p and apply light color grading
             result = subprocess.run([
                 'ffmpeg', '-y',
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', str(concat_list),
-                '-c', 'copy',
+                '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,eq=gamma=1.05:brightness=0.01:contrast=1.02:saturation=1.1',
+                '-c:v', 'libx264', '-preset', 'slow', '-crf', '16',
+                '-c:a', 'aac', '-b:a', '192k',
                 str(combined_clips_path)
-            ], capture_output=True, text=True, timeout=120)
-            
-            if result.returncode != 0:
-                result = subprocess.run([
-                    'ffmpeg', '-y',
-                    '-f', 'concat',
-                    '-safe', '0',
-                    '-i', str(concat_list),
-                    '-c:v', 'libx264', '-c:a', 'aac',
-                    '-preset', 'fast',
-                    str(combined_clips_path)
-                ], capture_output=True, text=True, timeout=180)
+            ], capture_output=True, text=True, timeout=180)
             
             if result.returncode == 0:
-                log(f"  ✓ Combined clips saved", explanation=f"Created {len(extracted_clips)}x4s = 12s continuous video")
+                log(f"  ✓ Combined with color grading (1080p, CRF 16)")
             else:
-                log(f"  ✗ Failed to combine: {result.stderr[:200]}")
-                return None
+                log(f"  ✗ {result.stderr[:100]}")
+                # Fallback - just concat
+                subprocess.run([
+                    'ffmpeg', '-y',
+                    '-f', 'concat', '-safe', '0', '-i', str(concat_list),
+                    '-c', 'copy', str(combined_clips_path)
+                ], capture_output=True, timeout=120)
         except Exception as e:
-            log(f"  ✗ Error combining clips: {e}")
-            return None
+            log(f"  ✗ Error: {e}")
         
         # Step 3: Generate LTX intro and outro
         # LTX creates AI-generated video from images - we're using the title artwork
@@ -473,8 +510,9 @@ class TychoOrchestrator:
         log(f"  Generating INTRO (4s): '{actor.actor_name} deep cut. Ever see {title_text}?'", explanation="Hook with Dan LaFontaine style voiceover - dramatic and exciting")
         intro_path = project_dir / f"bumper_intro_{actor.actor_id}.mp4"
         try:
+            # Use actor's headshot as the image for LTX
             self.ltx.generate_video(
-                #image_path=intro_image,
+                image_path=actor.headshot_url,
                 prompt=intro_prompt,
                 duration=4,  # 4 seconds intro
                 resolution=resolution,

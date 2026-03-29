@@ -69,6 +69,13 @@ class GenerateSpotRequest(BaseModel):
     resolution: str = Field("1920x1080", description="Output resolution")
 
 
+class ExportRequest(BaseModel):
+    """Request to export clips in a specific format."""
+    actor_id: str = Field(..., description="IMDb actor ID")
+    format: str = Field(..., description="Format: EDL, AAF, or MAM")
+    system: Optional[str] = Field("Generic", description="Target system (e.g., Avid, Dalet)")
+
+
 class ClipMatchResponse(BaseModel):
     """A clip where an actor was found."""
     video_id: str
@@ -219,6 +226,9 @@ async def create_project(request: CreateProjectRequest):
         project_data = load_project(project_id)
         project_data["project_id"] = project_id
         project_data["status"] = "ready"
+        # Ensure source_video_id is set (may be None when using existing index)
+        if not project_data.get("source_video_id"):
+            project_data["source_video_id"] = "existing_index_video"
         save_project(project_id, project_data)
         
         return ProjectResponse(**project_data)

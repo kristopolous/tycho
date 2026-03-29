@@ -167,22 +167,42 @@ class TwelveLabsClient:
     ) -> List[ClipMatch]:
         """
         Search for an actor in indexed videos using their headshot.
+        
+        Args:
+            headshot_path: Can be a local file path OR a URL to an image
         """
-        if not os.path.exists(headshot_path):
-            raise FileNotFoundError(f"Headshot not found: {headshot_path}")
-
         print(f"\n[12Labs] {'='*60}")
         print(f"[12Labs] Searching for {actor_name} in video...")
         print(f"[12Labs] Headshot: {headshot_path}")
 
         try:
-            with open(headshot_path, "rb") as f:
+            # Check if it's a URL - if so, pass it directly to 12Labs (avoids downloading/large file issues)
+            if headshot_path.startswith('http://') or headshot_path.startswith('https://'):
+                print(f"[12Labs] Using URL directly (avoids large file download)")
                 search_results = self.client.search.query(
                     index_id=self.index_id,
                     search_options=["visual"],
                     query_media_type="image",
-                    query_media_file=f,
+                    query_media_url=headshot_path,
                 )
+            else:
+                # It's a local file - check it exists and isn't too large
+                if not os.path.exists(headshot_path):
+                    raise FileNotFoundError(f"Headshot not found: {headshot_path}")
+                
+                # Check file size - 12Labs limit is 5.2MB
+                file_size_mb = os.path.getsize(headshot_path) / (1024 * 1024)
+                print(f"[12Labs] Headshot file size: {file_size_mb:.1f} MB")
+                if file_size_mb > 5.2:
+                    print(f"[12Labs] WARNING: File too large for 12Labs (max 5.2MB), trying anyway...")
+                
+                with open(headshot_path, "rb") as f:
+                    search_results = self.client.search.query(
+                        index_id=self.index_id,
+                        search_options=["visual"],
+                        query_media_type="image",
+                        query_media_file=f,
+                    )
 
             # LOG EVERY SINGLE CLIP FROM API
             print(f"[12Labs] RAW API RESPONSE - All clips:")

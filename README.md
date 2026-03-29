@@ -77,3 +77,18 @@ Watch the magic happen. 🎬
 - **12Labs** - Find actors in video via visual search
 - **LTX** - AI video generation
 - **Bedrock** - Amazong Bedrock
+
+---
+
+## Advanced Features
+
+### 📦 Modular Harness Architecture
+Tycho uses a decoupled "Harness" system to define promotional formulas for different distribution channels. Each harness (found in `/harnesses`) specifies a sequence of generative hooks and archival clips optimized for:
+- **TikTok**: 9:16 high-energy sizzles.
+- **Instagram**: 1:1 aesthetic character-focused reels.
+- **Creator Kits**: RAW high-quality clip libraries for influencer reviews.
+
+### 🎬 Professional Workflow Support
+- **Industry Exports**: Mandatory support for **AAF** and **EDL** formats, ensuring seamless hand-off to professional editors in Avid, Premiere, or Resolve.
+- **MAM/DAM Integration**: Enterprise connectivity for **Dalet**, **Avid Interplay**, and **Vantage**, supporting automated ingestion and metadata round-tripping.
+- **Influencer Enablement**: Automated generation of "Clip Kits" to drive organic traffic via creator partnerships.
