@@ -1,10 +1,8 @@
-# ✨ Tycho
-
-**Surface hidden gems. Star-powered promos from archival content.**
-
----
-
-## The Pitch
+<p align="center">
+<img width="598" height="183" alt="logo" src="https://github.com/user-attachments/assets/a8212683-d3c5-49e0-8375-9c96ab93abc4" />
+<br/>
+<strong>Surface hidden gems. Star-powered promos from archival content.</strong>
+</p>
 
 Remember when Brad Pitt was just a teenager on that 80s show you love? Or when Julia Roberts had a tiny role in something nobody remembers?
 
@@ -74,8 +72,4 @@ Watch the magic happen. 🎬
 - **IMDb** (imdbapi.dev) - Cast data & headshots
 - **12Labs** - Find actors in video via visual search
 - **LTX** - AI video generation
-- **FastAPI** - Backend API
-
----
-
-**Hackathon ready. Questions? Just ask.** 🚀
+- **Bedrock** - Amazong Bedrock
