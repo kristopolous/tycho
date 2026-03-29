@@ -48,8 +48,105 @@ FRONTEND_DIR = BASE_DIR
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Mount static files for videos
-app.mount("/videos", StaticFiles(directory=str(OUTPUT_DIR)), name="videos")
+import os
+import subprocess
+import sys
+import requests
+from pathlib import Path
+from typing import Optional, Set
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+# Import Tycho components
+from api import router as api_router
+from database import get_db
+from brave_client import get_brave_headshot
+from tmdb_client import get_headshots_for_actor
+
+# Global set to track in-progress discoveries to avoid redundant jobs
+discovery_in_progress: Set[str] = set()
+
+# Create main app
+app = FastAPI(
+    title="Tycho",
+    description="Create actor-focused promotional videos from archival content",
+    version="1.0.0",
+)
+
+# ... CORS ...
+
+# ============== Image Discovery Worker ==============
+
+def discover_image_worker(imdb_id: str, source: str, talent_name: str, save_path: Path):
+    """Worker function to fetch and save missing headshots."""
+    job_key = f"{imdb_id}_{source}"
+    try:
+        url = None
+        if source == "brave":
+            url = get_brave_headshot(talent_name)
+        elif source == "tmdb":
+            urls = get_headshots_for_actor(talent_name, imdb_id, max_images=1)
+            if urls:
+                url = urls[0]
+        elif source == "imdb":
+            # For IMDb, we typically already have it from the project creation,
+            # but if it's missing, we could re-fetch.
+            pass
+
+        if url:
+            print(f"[Discovery] Fetching {source} image for {talent_name}: {url}")
+            res = requests.get(url, timeout=15)
+            res.raise_for_status()
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(save_path, 'wb') as f:
+                f.write(res.content)
+            print(f"[Discovery] Saved: {save_path}")
+            
+    except Exception as e:
+        print(f"[Discovery] Error discovering {source} for {talent_name}: {e}")
+    finally:
+        if job_key in discovery_in_progress:
+            discovery_in_progress.remove(job_key)
+
+# ============== Dynamic Talent Images ==============
+
+@app.get("/images/{filename}")
+async def get_talent_image(filename: str, background_tasks: BackgroundTasks):
+    """
+    Serve a talent headshot or trigger discovery if missing.
+    Filename format: {imdb_id}_{source}.jpg
+    """
+    image_dir = OUTPUT_DIR / "images"
+    image_path = image_dir / filename
+    
+    if image_path.exists():
+        return FileResponse(str(image_path), media_type="image/jpeg")
+    
+    # Trigger Discovery
+    try:
+        parts = filename.replace(".jpg", "").split("_")
+        if len(parts) == 2:
+            imdb_id, source = parts
+            job_key = f"{imdb_id}_{source}"
+            
+            if job_key not in discovery_in_progress:
+                db = get_db()
+                talent = db.get_talent_by_imdb_id(imdb_id)
+                if talent:
+                    discovery_in_progress.add(job_key)
+                    background_tasks.add_task(
+                        discover_image_worker, 
+                        imdb_id, source, talent.name, image_path
+                    )
+                    print(f"[Discovery] Queued {source} discovery for {talent.name}")
+    except Exception as e:
+        print(f"[Discovery] Job trigger failed: {e}")
+    
+    raise HTTPException(status_code=404, detail="Image not found yet - discovery triggered")
+
 
 # Include API routes (they already have /api prefix in their paths)
 app.include_router(api_router)

@@ -33,6 +33,15 @@ try:
 except ImportError:
     pass
 
+# Brave Image Search integration (optional)
+BRAVE_AVAILABLE = False
+get_brave_headshot = None
+try:
+    from brave_client import get_brave_headshot
+    BRAVE_AVAILABLE = True
+except ImportError:
+    pass
+
 # Cache configuration
 CACHE_DIR = Path(__file__).parent / ".cache"
 CACHE_DB = CACHE_DIR / "imdb_cache.db"

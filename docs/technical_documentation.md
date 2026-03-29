@@ -22,10 +22,14 @@ The Tycho workflow is designed to bridge the gap between structured metadata (IM
 
 ## 2. Core Components
 
-### 2.1 IMDb-First Orchestration (`tycho.py`, `get_actors.py`)
-Unlike traditional "blind" face detection, Tycho uses IMDb as its ground truth. 
-*   **Seed Injection:** By inputting a `tt_id`, the system automatically fetches the full cast list and high-fidelity headshots.
-*   **Target Selection:** Media managers can filter for specific stars or let the system automatically process every "Guest Star" who is now a "Name."
+### 2.1 IMDb-First Orchestration & Deep Profiling
+Unlike traditional "blind" face detection, Tycho uses IMDb as its ground truth, enriched by an asynchronous talent profiling pipeline.
+*   **Talent Database (`database.py`):** A centralized tracking system for talent metadata, images, and performance metrics.
+*   **Multi-Source Discovery:** When a new `tt_id` is processed, Tycho initiates a background "Enrichment Queue" that fetches headshots from three independent sources:
+    - **IMDb**: The primary metadata source.
+    - **TMDB**: High-resolution alternate images.
+    - **Brave Image Search**: Isolated headshot search for diverse visual seeds.
+*   **AI Classification (`openrouter_client.py`):** Uses LLMs (via OpenRouter) to classify talent "Mise-en-scene" (e.g., *Brooding/Intense* vs. *High-Energy/Comedic*). This classification is used to tailor generative prompts and creative harnesses.
 
 ### 2.2 Semantic Search Integration (`twelvelabs_client.py`)
 Tycho leverages **TwelveLabs Marengo 3.0** (via AWS Bedrock/SaaS) for multimodal video understanding.

@@ -58,11 +58,23 @@ class TychoProject:
     status: str = "processing"  # "processing", "ready", "error"
     title_text: str = ""  # Title name (e.g., "The Crane")
     title_image_url: str = ""  # Poster/artwork from IMDB
+    harness_name: Optional[str] = None  # Harness/template name (e.g., "nostalgia")
+    platform: Optional[str] = None  # Target platform (e.g., "tiktok", "youtube")
 
 
 class TychoOrchestrator:
     """Orchestrates the Tycho workflow."""
-    
+
+    # Platform to resolution mapping for aspect ratio fallback
+    PLATFORM_RESOLUTION = {
+        "tiktok": "1080x1920",      # 9:16 portrait
+        "instagram": "1080x1920",   # 9:16 portrait (Reels)
+        "youtube": "1920x1080",     # 16:9 landscape (Shorts can also be 9:16)
+        "youtube_shorts": "1080x1920",  # 9:16 portrait
+        "threads": "1080x1080",     # 1:1 square
+        "pack": "1920x1080",        # 16:9 landscape
+    }
+
     def __init__(self, output_dir: str = "outputs"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -83,17 +95,21 @@ class TychoOrchestrator:
         index_name: Optional[str] = None,
         use_tmdb: bool = False,
         max_tmdb_images: int = 2,
+        harness_name: Optional[str] = None,
+        platform: Optional[str] = None,
     ) -> TychoProject:
         """
         Create a Tycho project for a video.
-        
+
         Args:
             video_path: Path to the source video
             imdb_title_id: IMDb title ID (e.g., tt0058331)
             actor_names: Optional list of specific actor names to focus on
             max_actors: Maximum number of actors to process
             index_name: Optional name for the 12Labs index
-        
+            harness_name: Optional harness/template name (e.g., "nostalgia")
+            platform: Optional target platform (e.g., "tiktok", "youtube")
+
         Returns:
             TychoProject object
         """
@@ -289,6 +305,8 @@ class TychoOrchestrator:
             },
             title_text=title_text,
             title_image_url=title_image_url,
+            harness_name=harness_name,
+            platform=platform,
         )
         
         # Save project
@@ -305,29 +323,44 @@ class TychoOrchestrator:
         actor_name: str,
         prompt: Optional[str] = None,
         duration: int = 16,
-        resolution: str = "1920x1080",
+        resolution: Optional[str] = None,  # Will be determined from platform/harness if not provided
+        harness_name: Optional[str] = None,  # Override project harness if provided
+        platform: Optional[str] = None,  # Override project platform if provided
     ) -> Optional[str]:
         """
         Generate a promotional spot for a specific actor.
-        
+
         Structure (16 seconds total):
         - Intro: 4s LTX with title card "<actor> deep cut. Ever see <title>?"
         - Clips: 3 clips x 4s each = 12s from source video
         - Outro: 3s LTX with CTA "Watch <title> exclusively on streamplus"
-        
+
         Args:
             project: TychoProject object
             actor_name: Name of the actor to create a spot for
             prompt: Optional custom prompt for video generation
             duration: Total duration target (default 16s)
-            resolution: Output resolution
-        
+            resolution: Output resolution (auto-determined from platform if not provided)
+            harness_name: Override project harness name if provided
+            platform: Override project platform if provided
+
         Returns:
             Path to generated video or None
         """
         import subprocess
         from datetime import datetime
-        
+
+        # Determine effective harness and platform (priority: param > project > None)
+        effective_harness = harness_name or project.harness_name
+        effective_platform = platform or project.platform
+
+        # Determine resolution: explicit param > platform fallback > default
+        if resolution is None:
+            if effective_platform:
+                resolution = self.PLATFORM_RESOLUTION.get(effective_platform, "1920x1080")
+            else:
+                resolution = "1920x1080"  # Default landscape
+
         # Find the actor
         actor = None
         for a in project.actors:
@@ -697,23 +730,133 @@ class TychoOrchestrator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Tycho - Create actor-focused promotional videos")
-    parser.add_argument("video", type=str, help="Path to source video")
-    parser.add_argument("--imdb-id", type=str, required=True, help="IMDb title ID (e.g., tt0058331)")
+    parser = argparse.ArgumentParser(
+        description="Tycho - Create actor-focused promotional videos",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Create project with harness and platform
+  python tycho.py video.mp4 --imdb-id tt0058331 --harness nostalgia --platform tiktok
+  
+  # Check status of existing project
+  python tycho.py --status outputs/tycho_tt0058331_20260329_123456
+  
+  # Output project as JSON
+  python tycho.py --json outputs/tycho_tt0058331_20260329_123456
+        """
+    )
+    parser.add_argument("video", type=str, nargs="?", help="Path to source video")
+    parser.add_argument("--imdb-id", type=str, help="IMDb title ID (e.g., tt0058331)")
     parser.add_argument("--actor", type=str, action="append", help="Specific actor(s) to focus on")
     parser.add_argument("--max-actors", type=int, default=10, help="Maximum actors to process")
-    parser.add_argument("--generate", type=str, help="Generate spot for specific actor")
+    parser.add_argument("--generate", type=str, help="Generate spot for specific actor(s), comma-separated")
     parser.add_argument("--duration", type=int, default=10, help="Generated video duration (seconds)")
     parser.add_argument("--output", type=str, default="outputs", help="Output directory")
     parser.add_argument("--index-name", type=str, help="Custom 12Labs index name")
     parser.add_argument("--use-tmdb", action="store_true", help="Fetch additional headshots from TMDB for better search")
     parser.add_argument("--tmdb-images", type=int, default=2, help="Number of TMDB images to fetch per actor (default: 2)")
-    
+    parser.add_argument("--harness", type=str, help="Harness/template name (e.g., 'nostalgia', 'hype')")
+    parser.add_argument("--platform", type=str, help="Target platform (e.g., 'tiktok', 'youtube', 'instagram')")
+    parser.add_argument("--status", type=str, metavar="PROJECT_DIR", help="Check status of existing project")
+    parser.add_argument("--json", action="store_true", help="Output project data as JSON (use with --status)")
+    parser.add_argument("--list", action="store_true", help="List all projects in output directory")
+
     args = parser.parse_args()
-    
+
+    # Status check mode
+    if args.status:
+        project_path = Path(args.status) / "project.json"
+        if not project_path.exists():
+            # Try direct path to json file
+            project_path = Path(args.status)
+            if not project_path.exists():
+                print(f"Error: Project not found: {args.status}", file=sys.stderr)
+                sys.exit(1)
+        
+        with open(project_path) as f:
+            project_data = json.load(f)
+        
+        if args.json:
+            # Output raw JSON
+            print(json.dumps(project_data, indent=2))
+        else:
+            # Human-readable status
+            print(f"\n{'='*60}")
+            print(f"PROJECT STATUS: {project_data.get('project_id', 'Unknown')}")
+            print(f"{'='*60}")
+            print(f"IMDb ID:       {project_data.get('imdb_title_id', 'N/A')}")
+            print(f"Status:        {project_data.get('status', 'unknown')}")
+            print(f"Created:       {project_data.get('created_at', 'N/A')}")
+            print(f"Harness:       {project_data.get('harness_name', 'None (default)')}")
+            print(f"Platform:      {project_data.get('platform', 'None (default)')}")
+            print(f"\nActors ({len(project_data.get('actors', []))}):")
+            for actor in project_data.get('actors', []):
+                status = "✓ Generated" if actor.get('generated_video') else ("✗ Not found" if not actor.get('clips') else "○ Found, not generated")
+                clips = f" ({len(actor.get('clips', []))} clips)" if actor.get('clips') else ""
+                print(f"  - {actor['actor_name']}{clips}: {status}")
+            
+            # Check if processing is complete
+            actors = project_data.get('actors', [])
+            generated = sum(1 for a in actors if a.get('generated_video'))
+            total = len(actors)
+            print(f"\nProgress: {generated}/{total} spots generated")
+            
+            if project_data.get('status') == 'processing':
+                print("\n⚠️  Project is still processing...")
+            elif generated == total and total > 0:
+                print("\n✓ Project complete!")
+            else:
+                print(f"\n  Ready to generate {total - generated} more spots")
+            print(f"{'='*60}\n")
+        sys.exit(0)
+
+    # List projects mode
+    if args.list:
+        output_dir = Path(args.output)
+        if not output_dir.exists():
+            print(f"No output directory: {output_dir}")
+            sys.exit(0)
+        
+        projects = []
+        for proj_dir in output_dir.iterdir():
+            if proj_dir.is_dir():
+                proj_file = proj_dir / "project.json"
+                if proj_file.exists():
+                    with open(proj_file) as f:
+                        proj_data = json.load(f)
+                        projects.append(proj_data)
+        
+        if not projects:
+            print("No projects found")
+            sys.exit(0)
+        
+        projects.sort(key=lambda p: p.get('created_at', ''), reverse=True)
+        
+        if args.json:
+            print(json.dumps(projects, indent=2))
+        else:
+            print(f"\n{'='*60}")
+            print("PROJECTS")
+            print(f"{'='*60}")
+            for proj in projects:
+                actors = proj.get('actors', [])
+                generated = sum(1 for a in actors if a.get('generated_video'))
+                harness = proj.get('harness_name', 'default')
+                platform = proj.get('platform', 'default')
+                print(f"\n{proj.get('project_id', 'Unknown')}")
+                print(f"  IMDb: {proj.get('imdb_title_id', 'N/A')} | Status: {proj.get('status', 'unknown')}")
+                print(f"  Harness: {harness} | Platform: {platform}")
+                print(f"  Progress: {generated}/{len(actors)} spots generated")
+            print(f"{'='*60}\n")
+        sys.exit(0)
+
+    # Validate required arguments for create mode
+    if not args.video or not args.imdb_id:
+        parser.error("--imdb-id and VIDEO are required for creating a project")
+
     # Initialize orchestrator
     orchestrator = TychoOrchestrator(output_dir=args.output)
-    
+
     # Create project
     project = orchestrator.create_project(
         video_path=args.video,
@@ -723,8 +866,10 @@ def main():
         index_name=args.index_name,
         use_tmdb=args.use_tmdb,
         max_tmdb_images=args.tmdb_images,
+        harness_name=args.harness,
+        platform=args.platform,
     )
-    
+
     # Generate spot for specific actor if requested
     if args.generate:
         for actor_name in args.generate.split(","):
@@ -736,12 +881,12 @@ def main():
             )
             if video_path:
                 print(f"\nGenerated spot: {video_path}")
-    
+
     print(f"\n{'='*60}")
     print("TYCHO COMPLETE")
     print(f"{'='*60}")
     print(f"Project directory: {orchestrator.output_dir / project.project_id}")
-    
+
     return 0
 
 

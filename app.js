@@ -233,33 +233,48 @@ function displayContent(castData, project) {
             thumbnailsHtml = `<div class="clip-thumbnails">${thumbnails}</div>`;
         }
 
-        // Multi-source Reference Images (IMDb, TMDB, Brave)
+        // Multi-source Reference Images (Predictive Loading)
         let referenceImagesHtml = '';
-        const headshots = actor.all_headshots || (actor.headshot_url ? [actor.headshot_url] : []);
-        if (headshots.length > 0) {
-            const images = headshots.map((url, i) => {
-                let source = 'Source';
-                if (url.includes('media-amazon.com')) source = 'IMDb';
-                else if (url.includes('tmdb.org') || url.includes('themoviedb.org')) source = 'TMDB';
-                else if (i === headshots.length - 1 && headshots.length > 2) source = 'Brave';
-                else source = i === 0 ? 'IMDb' : 'Alt';
-
-                return `
-                <div class="ref-image-wrapper">
-                    <img src="${url}" class="ref-image" title="${source} Source">
-                    <span class="ref-source-tag">${source}</span>
-                </div>`;
-            }).join('');
-            referenceImagesHtml = `<div class="reference-images-strip">${images}</div>`;
-        }
+        const sources = ['imdb', 'tmdb', 'brave'];
+        const images = sources.map(source => {
+            const predictUrl = `/images/${actor.name_id}_${source}.jpg`;
+            // If we already have a hard URL from the backend, use it, otherwise use predicted
+            const actualUrl = actor.all_headshots?.find(u => u.includes(source)) || predictUrl;
+            
+            return `
+            <div class="ref-image-wrapper">
+                <img src="${actualUrl}" 
+                     class="ref-image" 
+                     data-source="${source}"
+                     data-actor-id="${actor.name_id}"
+                     onerror="this.parentElement.classList.add('pending-image')"
+                     onload="this.parentElement.classList.remove('pending-image')">
+                <span class="ref-source-tag">${source.toUpperCase()}</span>
+            </div>`;
+        }).join('');
+        referenceImagesHtml = `<div class="reference-images-strip">${images}</div>`;
         
         return `
         <div class="actor-card fade-in" data-actor-id="${actor.name_id}">
             <img src="${actor.headshot_url || 'https://via.placeholder.com/300x400?text=No+Image'}" onerror="this.src='https://via.placeholder.com/300x400?text=No+Image'}" class="main-headshot">
             <div class="actor-info">
-                <h3>${actor.name}</h3>
+                <div class="actor-header-row">
+                    <h3>${actor.name}</h3>
+                    ${actor.popularity_score ? `<span class="star-power">★ ${actor.popularity_score.toFixed(1)}</span>` : ''}
+                </div>
                 <p class="character">${actor.characters?.join(', ') || ''}</p>
                 
+                ${actor.mise_en_scene ? `
+                    <div class="talent-archetype">
+                        ${(typeof actor.mise_en_scene === 'string' ? JSON.parse(actor.mise_en_scene) : actor.mise_en_scene).adjectives?.map(t => `<span class="archetype-tag">${t}</span>`).join('') || ''}
+                    </div>
+                ` : `
+                    <div class="profiling-status">
+                        <div class="profiling-dot"></div>
+                        <span>Enriching Profile...</span>
+                    </div>
+                `}
+
                 <div class="ref-section-label">Reference Sources</div>
                 ${referenceImagesHtml}
 
@@ -361,6 +376,14 @@ window.handleExport = async function(actorId) {
         }, 2000);
     }
 };
+
+// Image Retry Polling
+setInterval(() => {
+    document.querySelectorAll('.pending-image img').forEach(img => {
+        const originalSrc = img.src.split('?')[0];
+        img.src = `${originalSrc}?t=${Date.now()}`;
+    });
+}, 5000);
 
 // Initial state restore
 if (restoreState()) {

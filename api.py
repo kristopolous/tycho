@@ -62,6 +62,8 @@ class CreateProjectRequest(BaseModel):
     actor_names: Optional[List[str]] = Field(None, description="Specific actors to focus on")
     max_actors: int = Field(10, ge=1, le=50, description="Maximum actors to process")
     index_name: Optional[str] = Field(None, description="Custom 12Labs index name")
+    harness_name: Optional[str] = Field(None, description="Harness/template name (e.g., 'nostalgia')")
+    platform: Optional[str] = Field(None, description="Target platform (e.g., 'tiktok', 'youtube')")
 
 
 class GenerateSpotRequest(BaseModel):
@@ -70,7 +72,9 @@ class GenerateSpotRequest(BaseModel):
     actor_id: Optional[str] = Field(None, description="IMDb actor ID")
     prompt: Optional[str] = Field(None, description="Custom prompt for video generation")
     duration: int = Field(10, ge=3, le=30, description="Video duration in seconds")
-    resolution: str = Field("1920x1080", description="Output resolution")
+    resolution: Optional[str] = Field(None, description="Output resolution (auto-determined from platform if not provided)")
+    harness_name: Optional[str] = Field(None, description="Override harness name for this generation")
+    platform: Optional[str] = Field(None, description="Override platform for this generation (determines aspect ratio)")
 
 
 class ExportRequest(BaseModel):
@@ -113,6 +117,8 @@ class ProjectResponse(BaseModel):
     metadata: dict
     title_text: str = ""
     title_image_url: str = ""
+    harness_name: Optional[str] = None
+    platform: Optional[str] = None
 
 
 class ProjectListItem(BaseModel):
@@ -218,6 +224,8 @@ async def create_project(request: CreateProjectRequest):
             actor_names=request.actor_names,
             max_actors=request.max_actors,
             index_name=index_name,
+            harness_name=request.harness_name,
+            platform=request.platform,
         )
         
         # Rename project directory to match our ID
@@ -320,8 +328,10 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
             status=project_data.get("status", "ready"),
             title_text=project_data.get("title_text", ""),
             title_image_url=project_data.get("title_image_url", ""),
+            harness_name=project_data.get("harness_name"),
+            platform=project_data.get("platform"),
         )
-        
+
         # Generate the spot
         video_path = orchestrator.generate_spot(
             project=project_obj,
@@ -329,6 +339,8 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
             prompt=request.prompt,
             duration=request.duration,
             resolution=request.resolution,
+            harness_name=request.harness_name,
+            platform=request.platform,
         )
 
         if not video_path:

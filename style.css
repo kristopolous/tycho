@@ -156,6 +156,26 @@ input, select {
 .ref-image-wrapper {
     position: relative;
     flex: 0 0 60px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.pending-image::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(158, 127, 255, 0.1), transparent);
+    animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.pending-image img {
+    opacity: 0;
 }
 
 .ref-image {
@@ -180,8 +200,58 @@ input, select {
 }
 
 .actor-info { padding: 1.25rem; }
-.actor-info h3 { margin-bottom: 0.25rem; }
-.actor-info .character { font-style: italic; color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem; }
+.actor-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+}
+.actor-info h3 { margin-bottom: 0; }
+.star-power {
+    font-size: 0.75rem;
+    color: var(--warning);
+    font-weight: bold;
+    background: rgba(245, 158, 11, 0.1);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+}
+.actor-info .character { font-style: italic; color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.9rem; }
+
+.talent-archetype {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.archetype-tag {
+    font-size: 0.6rem;
+    background: rgba(158, 127, 255, 0.15);
+    color: var(--primary);
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    border: 1px solid rgba(158, 127, 255, 0.3);
+    text-transform: uppercase;
+    font-weight: bold;
+}
+
+.profiling-status {
+    font-size: 0.7rem;
+    color: var(--warning);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    font-style: italic;
+}
+
+.profiling-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--warning);
+    border-radius: 50%;
+    animation: pulse 1s infinite;
+}
 
 .clip-thumbnails { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
 .clip-thumb-wrapper { display: flex; flex-direction: column; gap: 0.2rem; }
