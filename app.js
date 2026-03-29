@@ -7,6 +7,45 @@ const API_BASE_URL = window.location.origin;
 // Default video for testing
 const DEFAULT_VIDEO = 'content.mp4';
 
+// Image polling configuration
+const IMAGE_POLL_INTERVAL = 1000; // 1 second
+const IMAGE_POLL_MAX_RETRIES = 60; // 60 seconds total
+
+// Image load/error handlers with polling
+function handleImageLoad(img) {
+    const wrapper = img.parentElement;
+    if (wrapper) {
+        wrapper.classList.remove('pending-image');
+        wrapper.removeAttribute('data-polling');
+        const indicator = wrapper.querySelector('.ref-loading-indicator');
+        if (indicator) indicator.remove();
+    }
+}
+
+function handleImageError(img) {
+    const wrapper = img.parentElement;
+    let retryCount = parseInt(img.getAttribute('data-retry-count') || '0');
+    retryCount++;
+    img.setAttribute('data-retry-count', retryCount.toString());
+    
+    if (retryCount < IMAGE_POLL_MAX_RETRIES && wrapper && wrapper.getAttribute('data-polling') === 'true') {
+        // Poll again after delay
+        setTimeout(() => {
+            img.src = img.src.split('?')[0] + '?t=' + Date.now();
+        }, IMAGE_POLL_INTERVAL);
+    } else {
+        // Give up - show permanent failure state
+        if (wrapper) {
+            wrapper.classList.add('pending-image');
+            const indicator = wrapper.querySelector('.ref-loading-indicator');
+            if (indicator) {
+                indicator.textContent = '❌';
+                indicator.title = 'Image not available';
+            }
+        }
+    }
+}
+
 // DOM Elements
 const imdbInput = document.getElementById('imdbId');
 const videoPathInput = document.getElementById('videoPath');
@@ -233,23 +272,25 @@ function displayContent(castData, project) {
             thumbnailsHtml = `<div class="clip-thumbnails">${thumbnails}</div>`;
         }
 
-        // Multi-source Reference Images (Predictive Loading)
+        // Multi-source Reference Images (Predictive Loading with Polling)
         let referenceImagesHtml = '';
         const sources = ['imdb', 'tmdb', 'brave'];
         const images = sources.map(source => {
             const predictUrl = `/images/${actor.name_id}_${source}.jpg`;
             // If we already have a hard URL from the backend, use it, otherwise use predicted
             const actualUrl = actor.all_headshots?.find(u => u.includes(source)) || predictUrl;
-            
+
             return `
-            <div class="ref-image-wrapper">
-                <img src="${actualUrl}" 
-                     class="ref-image" 
+            <div class="ref-image-wrapper pending-image" data-polling="true">
+                <img src="${actualUrl}"
+                     class="ref-image"
                      data-source="${source}"
                      data-actor-id="${actor.name_id}"
-                     onerror="this.parentElement.classList.add('pending-image')"
-                     onload="this.parentElement.classList.remove('pending-image')">
+                     data-retry-count="0"
+                     onload="handleImageLoad(this)"
+                     onerror="handleImageError(this)">
                 <span class="ref-source-tag">${source.toUpperCase()}</span>
+                <span class="ref-loading-indicator">⏳</span>
             </div>`;
         }).join('');
         referenceImagesHtml = `<div class="reference-images-strip">${images}</div>`;
@@ -263,15 +304,14 @@ function displayContent(castData, project) {
                     ${actor.popularity_score ? `<span class="star-power">★ ${actor.popularity_score.toFixed(1)}</span>` : ''}
                 </div>
                 <p class="character">${actor.characters?.join(', ') || ''}</p>
-                
+
                 ${actor.mise_en_scene ? `
                     <div class="talent-archetype">
                         ${(typeof actor.mise_en_scene === 'string' ? JSON.parse(actor.mise_en_scene) : actor.mise_en_scene).adjectives?.map(t => `<span class="archetype-tag">${t}</span>`).join('') || ''}
                     </div>
                 ` : `
-                    <div class="profiling-status">
-                        <div class="profiling-dot"></div>
-                        <span>Enriching Profile...</span>
+                    <div class="talent-archetype">
+                        <span class="archetype-tag">Actor</span>
                     </div>
                 `}
 

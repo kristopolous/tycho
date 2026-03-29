@@ -52,6 +52,7 @@ import os
 import subprocess
 import sys
 import requests
+import threading
 from pathlib import Path
 from typing import Optional, Set
 
@@ -80,33 +81,44 @@ app = FastAPI(
 
 # ============== Image Discovery Worker ==============
 
-def discover_image_worker(imdb_id: str, source: str, talent_name: str, save_path: Path):
-    """Worker function to fetch and save missing headshots."""
+def discover_image_worker(imdb_id: str, source: str, talent_name: str, save_path: Path, imdb_image_url: str = None):
+    """Worker function to fetch and save missing headshots.
+
+    Args:
+        imdb_id: IMDb ID (e.g., nm0706977) - the primary unique identifier
+        source: Image source ('imdb', 'tmdb', 'brave')
+        talent_name: Human-readable name for API lookups (TMDB, Brave)
+        save_path: Where to save the downloaded image
+        imdb_image_url: Optional pre-computed IMDb URL (only used for source='imdb')
+    """
     job_key = f"{imdb_id}_{source}"
     try:
         url = None
-        if source == "brave":
-            url = get_brave_headshot(talent_name)
+        if source == "imdb":
+            # Use the provided IMDb URL from project data
+            url = imdb_image_url
+            if not url:
+                print(f"[Discovery] No IMDb URL provided for {imdb_id}")
         elif source == "tmdb":
+            # Fetch from TMDB API using talent name
             urls = get_headshots_for_actor(talent_name, imdb_id, max_images=1)
             if urls:
                 url = urls[0]
-        elif source == "imdb":
-            # For IMDb, we typically already have it from the project creation,
-            # but if it's missing, we could re-fetch.
-            pass
+        elif source == "brave":
+            # Fetch from Brave Image Search using talent name
+            url = get_brave_headshot(talent_name)
 
         if url:
-            print(f"[Discovery] Fetching {source} image for {talent_name}: {url}")
+            print(f"[Discovery] Fetching {source} image for {imdb_id}: {url[:80]}...")
             res = requests.get(url, timeout=15)
             res.raise_for_status()
             save_path.parent.mkdir(parents=True, exist_ok=True)
             with open(save_path, 'wb') as f:
                 f.write(res.content)
             print(f"[Discovery] Saved: {save_path}")
-            
+
     except Exception as e:
-        print(f"[Discovery] Error discovering {source} for {talent_name}: {e}")
+        print(f"[Discovery] Error discovering {source} for {imdb_id}: {e}")
     finally:
         if job_key in discovery_in_progress:
             discovery_in_progress.remove(job_key)
@@ -114,37 +126,82 @@ def discover_image_worker(imdb_id: str, source: str, talent_name: str, save_path
 # ============== Dynamic Talent Images ==============
 
 @app.get("/images/{filename}")
-async def get_talent_image(filename: str, background_tasks: BackgroundTasks):
+async def get_talent_image(filename: str):
     """
     Serve a talent headshot or trigger discovery if missing.
     Filename format: {imdb_id}_{source}.jpg
+
+    Also supports legacy format: {imdb_id}.jpg (returns any available source)
     """
     image_dir = OUTPUT_DIR / "images"
     image_path = image_dir / filename
-    
+
     if image_path.exists():
         return FileResponse(str(image_path), media_type="image/jpeg")
-    
+
     # Trigger Discovery
     try:
         parts = filename.replace(".jpg", "").split("_")
         if len(parts) == 2:
             imdb_id, source = parts
             job_key = f"{imdb_id}_{source}"
-            
+
             if job_key not in discovery_in_progress:
+                # Look up actor data from project files first (using IMDb ID as key)
+                actor_data = None
+                try:
+                    for proj_dir in sorted(OUTPUT_DIR.iterdir(), reverse=True):
+                        if proj_dir.is_dir() and proj_dir.name.startswith('tycho_'):
+                            proj_file = proj_dir / "project.json"
+                            if proj_file.exists():
+                                import json
+                                with open(proj_file) as f:
+                                    proj_data = json.load(f)
+                                for actor in proj_data.get('actors', []):
+                                    if actor.get('actor_id') == imdb_id:
+                                        actor_data = actor
+                                        print(f"[Discovery] Found {actor_data.get('actor_name')} ({imdb_id}) in {proj_dir.name}")
+                                        break
+                                if actor_data:
+                                    break
+                except Exception as e:
+                    print(f"[Discovery] Error looking up project data: {e}")
+
+                talent_name = actor_data.get('actor_name') or actor_data.get('name') if actor_data else None
+                imdb_image_url = actor_data.get('headshot_url') if actor_data else None
+
+                # Get or create talent in DB
                 db = get_db()
                 talent = db.get_talent_by_imdb_id(imdb_id)
+
+                if not talent and talent_name:
+                    from talent_db import get_or_create_talent_from_imdb
+                    talent = get_or_create_talent_from_imdb(
+                        imdb_id=imdb_id,
+                        name=talent_name
+                    )
+                    print(f"[Discovery] Created talent: {talent_name} ({imdb_id})")
+
                 if talent:
                     discovery_in_progress.add(job_key)
-                    background_tasks.add_task(
-                        discover_image_worker, 
-                        imdb_id, source, talent.name, image_path
+                    # Use threading directly instead of BackgroundTasks for more reliable execution
+                    thread = threading.Thread(
+                        target=discover_image_worker,
+                        args=(imdb_id, source, talent.name, image_path, imdb_image_url),
+                        daemon=True
                     )
-                    print(f"[Discovery] Queued {source} discovery for {talent.name}")
+                    thread.start()
+                    print(f"[Discovery] Queued {source} discovery for {imdb_id} (name: {talent.name})")
+        elif len(parts) == 1:
+            # Legacy format: {imdb_id}.jpg - try to find any available image
+            imdb_id = parts[0]
+            for source in ['imdb', 'tmdb', 'brave']:
+                legacy_path = image_dir / f"{imdb_id}_{source}.jpg"
+                if legacy_path.exists():
+                    return FileResponse(str(legacy_path), media_type="image/jpeg")
     except Exception as e:
         print(f"[Discovery] Job trigger failed: {e}")
-    
+
     raise HTTPException(status_code=404, detail="Image not found yet - discovery triggered")
 
 

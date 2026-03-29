@@ -64,6 +64,8 @@ class CreateProjectRequest(BaseModel):
     index_name: Optional[str] = Field(None, description="Custom 12Labs index name")
     harness_name: Optional[str] = Field(None, description="Harness/template name (e.g., 'nostalgia')")
     platform: Optional[str] = Field(None, description="Target platform (e.g., 'tiktok', 'youtube')")
+    use_tmdb: bool = Field(True, description="Use TMDB for additional headshots (multi-image search)")
+    max_tmdb_images: int = Field(3, ge=1, le=10, description="Max TMDB images per actor for multi-image search")
 
 
 class GenerateSpotRequest(BaseModel):
@@ -226,6 +228,8 @@ async def create_project(request: CreateProjectRequest):
             index_name=index_name,
             harness_name=request.harness_name,
             platform=request.platform,
+            use_tmdb=request.use_tmdb,
+            max_tmdb_images=request.max_tmdb_images,
         )
         
         # Rename project directory to match our ID
