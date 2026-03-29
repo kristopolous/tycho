@@ -580,52 +580,95 @@ class TychoOrchestrator:
         except Exception as e:
             log(f"  ✗ Error: {e}")
         
-        # Step 3: Generate LTX intro and outro
-        # LTX creates AI-generated video from images - we're using the title artwork
-        # to create branded intro/outro segments
-        log(f"=== Step 3: Generating LTX intro (4s) and outro (3s) ===", explanation="LTX Video API generates AI video from your image + prompt")
-        
+        # Step 3: Generate intro and outro with ffmpeg text overlays
+        # TikTok-style text overlays are more reliable than LTX text generation
+        log(f"=== Step 3: Generating intro (4s) and outro (3s) with ffmpeg text overlays ===", 
+            explanation="ffmpeg drawtext filter creates clean, professional text overlays")
+
         # Use title image if available, otherwise fallback to headshot
         intro_image = title_image if title_image else actor.headshot_url
-        
+
         # INTRO: "<actor> deep cut. Ever see <title>?"
-        # This is the hook - grabs attention with the actor's name and intrigues about the movie
-        # Using the Dan LaFontaine style voiceover instructions that worked well
-        # Intro: EXACTLY match user's curl example format + quiet ambience
         title_for_display = title_text.title()  # "The Crane" for display
-        title_for_voice = title_text.lower()    # "the crane" for voiceover
-        intro_prompt = f"A cinematic voice over of a blackscreen with white text that says \"{actor.actor_name} Deep Cut: Ever seen {title_for_display}?\" with the dan lafontaine classic cinema style voice: \"{actor.actor_name}, Deep cut. Ever seen {title_for_voice}\" it should anticipatory and exciting. Quiet ambience."
-        log(f"  Generating INTRO (4s): '{actor.actor_name} deep cut. Ever see {title_text}?'", explanation="Hook with Dan LaFontaine style voiceover - dramatic and exciting")
+        
+        log(f"  Generating INTRO (4s): '{actor.actor_name} deep cut. Ever see {title_for_display}?'", 
+            explanation="Hook with TikTok-style text overlay - grabs attention")
         intro_path = project_dir / f"bumper_intro_{actor.actor_id}.mp4"
+        
         try:
-            # Use actor's headshot as the image for LTX
-            self.ltx.generate_video(
-                image_path=actor.headshot_url,
-                prompt=intro_prompt,
-                duration=4,  # 4 seconds intro
-                resolution=resolution,
-                output_path=str(intro_path),
-            )
-            log(f"  ✓ Intro (4s) generated", explanation="AI-generated title card with voiceover")
+            # Create intro with ffmpeg: solid background + text overlay
+            # TikTok style: bold white text on dark gradient background
+            subprocess.run([
+                'ffmpeg', '-y',
+                '-f', 'lavfi', '-i', 'color=c=black:s=1080x1920:d=4',
+                '-vf', f'''
+                    drawtext=
+                        text='{actor.actor_name} Deep Cut':
+                        fontsize=72:
+                        fontcolor=white:
+                        fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:
+                        x=(w-text_w)/2:
+                        y=(h-text_h)/2-50:
+                        enable='between(t,0,4)',
+                    drawtext=
+                        text='Ever seen {title_for_display}?':
+                        fontsize=48:
+                        fontcolor=white:
+                        fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:
+                        x=(w-text_w)/2:
+                        y=(h-text_h)/2+50:
+                        enable='between(t,0,4)'
+                ''',
+                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                '-pix_fmt', 'yuv420p',
+                str(intro_path)
+            ], capture_output=True, timeout=60)
+            log(f"  ✓ Intro (4s) generated", explanation="TikTok-style title card with bold text")
         except Exception as e:
             log(f"  ✗ Intro failed: {e}")
             intro_path = None
-        
+
         # OUTRO: "Watch <title> exclusively on streamplus"
-        # CTA - tells viewer where to watch the full movie - using cinematic trailer style
-        # Outro: CTA with dan lafontaine style + quiet ambience
-        outro_prompt = f"A cinematic voice over of a blackscreen with white text that says \"Watch {title_text} exclusively on streamplus\" with the dan lafontaine classic cinema style voice: \"Watch {title_text} exclusively on streamplus\" - powerful, authoritative, deep bass, professional trailer voice. Quiet ambience."
-        log(f"  Generating OUTRO (3s): 'Watch {title_text} exclusively on streamplus'", explanation="CTA with cinematic trailer voiceover - drives viewers to platform")
+        log(f"  Generating OUTRO (3s): 'Watch {title_for_display} exclusively on streamplus'", 
+            explanation="CTA with TikTok-style text overlay - drives viewers to platform")
         outro_path = project_dir / f"bumper_outro_{actor.actor_id}.mp4"
+        
         try:
-            self.ltx.generate_video(
-                image_path=intro_image,  # Reuse title image
-                prompt=outro_prompt,
-                duration=3,  # 3 seconds outro
-                resolution=resolution,
-                output_path=str(outro_path),
-            )
-            log(f"  ✓ Outro (3s) generated", explanation="AI-generated end card with channel branding")
+            # Create outro with ffmpeg: solid background + text overlay
+            subprocess.run([
+                'ffmpeg', '-y',
+                '-f', 'lavfi', '-i', 'color=c=black:s=1080x1920:d=3',
+                '-vf', f'''
+                    drawtext=
+                        text='Watch {title_for_display}':
+                        fontsize=56:
+                        fontcolor=white:
+                        fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:
+                        x=(w-text_w)/2:
+                        y=(h-text_h)/2-30:
+                        enable='between(t,0,3)',
+                    drawtext=
+                        text='exclusively on':
+                        fontsize=36:
+                        fontcolor=#888888:
+                        fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:
+                        x=(w-text_w)/2:
+                        y=(h-text_h)/2+30:
+                        enable='between(t,0,3)',
+                    drawtext=
+                        text='streamplus':
+                        fontsize=64:
+                        fontcolor=#E50914:
+                        fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:
+                        x=(w-text_w)/2:
+                        y=(h-text_h)/2+80:
+                        enable='between(t,0,3)'
+                ''',
+                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                '-pix_fmt', 'yuv420p',
+                str(outro_path)
+            ], capture_output=True, timeout=60)
+            log(f"  ✓ Outro (3s) generated", explanation="TikTok-style end card with platform branding")
         except Exception as e:
             log(f"  ✗ Outro failed: {e}")
             outro_path = None
