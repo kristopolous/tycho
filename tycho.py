@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import our modules
-from get_actors import fetch_cast_with_images, init_cache
+from get_actors import fetch_cast_with_images, init_cache, get_title_metadata
 from twelvelabs_client import TwelveLabsClient, ClipMatch
 from ltx_client import LTXClient
 
@@ -55,6 +55,9 @@ class TychoProject:
     created_at: str
     actors: List[ActorSpot]
     metadata: dict
+    status: str = "processing"  # "processing", "ready", "error"
+    title_text: str = ""  # Title name (e.g., "The Crane")
+    title_image_url: str = ""  # Poster/artwork from IMDB
 
 
 class TychoOrchestrator:
@@ -99,9 +102,17 @@ class TychoOrchestrator:
         print(f"IMDb: {imdb_title_id}")
         print(f"{'='*60}\n")
         
-        # Step 1: Get cast from IMDb
-        print("[Step 1/5] Fetching cast from IMDb...")
+        # Step 1: Get cast from IMDb and title metadata
+        print("[Step 1/6] Fetching cast and title info from IMDb...")
         cast = fetch_cast_with_images(imdb_title_id, limit=max_actors)
+        
+        # Get title metadata (title text and artwork)
+        title_info = get_title_metadata(imdb_title_id)
+        title_text = title_info.get('title', '')
+        title_image_url = title_info.get('image_url', '')
+        print(f"      Title: {title_text}")
+        if title_image_url:
+            print(f"      Title image available")
         
         # Filter to specific actors if requested
         if actor_names:
@@ -218,7 +229,7 @@ class TychoOrchestrator:
                 print(f"      {actor['name']}: Not found in video")
         
         # Step 4: Generate promotional videos (optional - can be done per-actor)
-        print(f"\n[Step 4/5] Ready to generate spots for {len(actor_spots)} actors")
+        print(f"\n[Step 4/6] Ready to generate spots for {len(actor_spots)} actors")
         
         # Create project object
         project = TychoProject(
@@ -232,13 +243,15 @@ class TychoOrchestrator:
                 "index_name": index_name,
                 "cast_count": len(cast),
                 "actors_found": len(actor_spots),
-            }
+            },
+            title_text=title_text,
+            title_image_url=title_image_url,
         )
         
         # Save project
         self._save_project(project)
         
-        print(f"\n[Step 5/5] Project saved!")
+        print(f"\n[Step 6/6] Project saved!")
         print(f"      Output: {self.output_dir / project.project_id}")
         
         return project
@@ -248,22 +261,30 @@ class TychoOrchestrator:
         project: TychoProject,
         actor_name: str,
         prompt: Optional[str] = None,
-        duration: int = 10,
+        duration: int = 16,
         resolution: str = "1920x1080",
     ) -> Optional[str]:
         """
         Generate a promotional spot for a specific actor.
         
+        Structure (16 seconds total):
+        - Intro: 4s LTX with title card "<actor> deep cut. Ever see <title>?"
+        - Clips: 3 clips x 4s each = 12s from source video
+        - Outro: 3s LTX with CTA "Watch <title> exclusively on streamplus"
+        
         Args:
             project: TychoProject object
             actor_name: Name of the actor to create a spot for
             prompt: Optional custom prompt for video generation
-            duration: Duration of generated video in seconds
+            duration: Total duration target (default 16s)
             resolution: Output resolution
         
         Returns:
             Path to generated video or None
         """
+        import subprocess
+        from datetime import datetime
+        
         # Find the actor
         actor = None
         for a in project.actors:
@@ -279,40 +300,244 @@ class TychoOrchestrator:
             print(f"No clips found for {actor_name}")
             return None
         
-        # Download headshot
-        headshot_path = self._download_image(actor.headshot_url, actor.actor_id)
+        # Get title info for intro/outro
+        title_text = project.title_text or "the movie"
+        title_image = project.title_image_url or actor.headshot_url
         
-        # Generate prompt if not provided
-        if prompt is None:
-            prompt = self._generate_voiceover_prompt(actor)
+        # Setup logging to file in project directory
+        project_dir = self.output_dir / project.project_id
+        project_dir.mkdir(parents=True, exist_ok=True)
+        log_file = project_dir / f"generation_{actor.actor_id}.log"
         
-        print(f"\nGenerating spot for {actor_name}...")
-        print(f"  Prompt: {prompt}")
+        # Clear log file at start of each generation
+        open(log_file, "w").close()
         
-        # Generate video
-        output_path = str(self.output_dir / project.project_id / f"spot_{actor.actor_id}.mp4")
+        def log(msg, explanation=None):
+            """Write to both console and log file with optional explanation."""
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            console_msg = f"[{timestamp}] {msg}"
+            print(console_msg)
+            with open(log_file, "a") as f:
+                f.write(console_msg + "\n")
+                if explanation:
+                    f.write(f"         └─ {explanation}\n")
+        
+        log(f"Starting 16s spot generation for {actor_name}")
+        log(f"Target title: {title_text}", explanation=f"Using title artwork from IMDB for intro/outro")
+        log(f"Found {len(actor.clips)} clips in source video", explanation=f"These are the moments where {actor_name} appears in the film")
+        
+        source_video_path = project.source_video
+        if not os.path.exists(source_video_path):
+            log(f"ERROR: Source video not found: {source_video_path}")
+            return None
+        
+        # Select up to 3 clips (max 4s each = 12s of content)
+        # This gives us exactly 12 seconds of archival footage
+        MAX_CLIP_DURATION = 4
+        selected_clips = []
+        for clip in actor.clips[:3]:  # Take first 3 clips
+            start = clip['start']
+            end = min(clip['end'], start + MAX_CLIP_DURATION)  # Truncate to 4s max
+            selected_clips.append({'start': start, 'end': end})
+        
+        log(f"Selected {len(selected_clips)} clips (capped at 4s each = 12s total)", explanation=f"Archival clips from the movie that showcase the actor")
+        
+        # Step 1: Extract individual clips from source video using ffmpeg
+        # We're cutting out the specific moments from the movie where this actor appears
+        log(f"=== Step 1: Extracting {len(selected_clips)} clips from source video ===", explanation=f"ffmpeg cuts out each clip segment from the full movie")
+        extracted_clips = []
+        
+        for i, clip in enumerate(selected_clips):
+            start_time = clip['start']
+            end_time = clip['end']
+            clip_duration = end_time - start_time
+            
+            clip_output = project_dir / f"clip_{actor.actor_id}_{i}.mp4"
+            extracted_clips.append(str(clip_output))
+            
+            # Skip if already extracted
+            if clip_output.exists():
+                log(f"  Clip {i}: {start_time:.1f}s - {end_time:.1f}s (cached)", explanation="Already extracted, using cached version")
+                continue
+            
+            log(f"  Clip {i}: {start_time:.1f}s - {end_time:.1f}s (duration: {clip_duration:.1f}s)", explanation=f"Extracting archival footage from the movie")
+            
+            # Extract clip using ffmpeg
+            try:
+                result = subprocess.run([
+                    'ffmpeg', '-y',
+                    '-i', source_video_path,
+                    '-ss', str(start_time),
+                    '-t', str(clip_duration),
+                    '-c', 'copy',  # Copy codec for speed
+                    '-avoid_negative_ts', '1',
+                    str(clip_output)
+                ], capture_output=True, text=True, timeout=60)
+                
+                if result.returncode != 0:
+                    print(f"    Warning: ffmpeg failed, trying with re-encode")
+                    result = subprocess.run([
+                        'ffmpeg', '-y',
+                        '-i', source_video_path,
+                        '-ss', str(start_time),
+                        '-t', str(clip_duration),
+                        '-c:v', 'libx264', '-c:a', 'aac',
+                        '-preset', 'fast',
+                        str(clip_output)
+                    ], capture_output=True, text=True, timeout=120)
+                
+                if result.returncode == 0 and clip_output.exists():
+                    log(f"    ✓ Extracted successfully", explanation="Clip saved to project directory")
+                else:
+                    log(f"    ✗ Failed: {result.stderr[:200]}", explanation="ffmpeg error")
+                    extracted_clips.pop()
+            except Exception as e:
+                log(f"    ✗ Error: {e}", explanation="Exception during extraction")
+                if clip_output in extracted_clips:
+                    extracted_clips.pop()
+        
+        if not extracted_clips:
+            log("ERROR: No clips could be extracted")
+            return None
+        
+        # Step 2: Concatenate all clips into one video
+        # We need to join these clips into one continuous 12-second segment
+        log(f"=== Step 2: Combining {len(extracted_clips)} clips into one video ===", explanation="Concatenating clips creates continuous archival segment")
+        combined_clips_path = project_dir / f"combined_{actor.actor_id}.mp4"
+        
+        concat_list = project_dir / f"concat_{actor.actor_id}.txt"
+        with open(concat_list, 'w') as f:
+            for clip_path in extracted_clips:
+                f.write(f"file '{clip_path}'\n")
         
         try:
-            video = self.ltx.generate_video(
-                image_path=headshot_path,
-                prompt=prompt,
-                duration=duration,
-                resolution=resolution,
-                output_path=output_path,
-            )
+            result = subprocess.run([
+                'ffmpeg', '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', str(concat_list),
+                '-c', 'copy',
+                str(combined_clips_path)
+            ], capture_output=True, text=True, timeout=120)
             
-            # Update actor spot
-            actor.generated_video = video.video_path
-            actor.voiceover_script = prompt
+            if result.returncode != 0:
+                result = subprocess.run([
+                    'ffmpeg', '-y',
+                    '-f', 'concat',
+                    '-safe', '0',
+                    '-i', str(concat_list),
+                    '-c:v', 'libx264', '-c:a', 'aac',
+                    '-preset', 'fast',
+                    str(combined_clips_path)
+                ], capture_output=True, text=True, timeout=180)
             
-            # Save updated project
-            self._save_project(project)
-            
-            return video.video_path
-            
+            if result.returncode == 0:
+                log(f"  ✓ Combined clips saved", explanation=f"Created {len(extracted_clips)}x4s = 12s continuous video")
+            else:
+                log(f"  ✗ Failed to combine: {result.stderr[:200]}")
+                return None
         except Exception as e:
-            print(f"Error generating video: {e}")
+            log(f"  ✗ Error combining clips: {e}")
             return None
+        
+        # Step 3: Generate LTX intro and outro
+        # LTX creates AI-generated video from images - we're using the title artwork
+        # to create branded intro/outro segments
+        log(f"=== Step 3: Generating LTX intro (4s) and outro (3s) ===", explanation="LTX Video API generates AI video from your image + prompt")
+        
+        # Use title image if available, otherwise fallback to headshot
+        intro_image = title_image if title_image else actor.headshot_url
+        
+        # INTRO: "<actor> deep cut. Ever see <title>?"
+        # This is the hook - grabs attention with the actor's name and intrigues about the movie
+        # Using the Dan LaFontaine style voiceover instructions that worked well
+        # Intro: EXACTLY match user's curl example format + quiet ambience
+        title_for_display = title_text.title()  # "The Crane" for display
+        title_for_voice = title_text.lower()    # "the crane" for voiceover
+        intro_prompt = f"A cinematic voice over of a blackscreen with white text that says \"{actor.actor_name} Deep Cut: Ever seen {title_for_display}?\" with the dan lafontaine classic cinema style voice: \"{actor.actor_name}, Deep cut. Ever seen {title_for_voice}\" it should anticipatory and exciting. Quiet ambience."
+        log(f"  Generating INTRO (4s): '{actor.actor_name} deep cut. Ever see {title_text}?'", explanation="Hook with Dan LaFontaine style voiceover - dramatic and exciting")
+        intro_path = project_dir / f"bumper_intro_{actor.actor_id}.mp4"
+        try:
+            self.ltx.generate_video(
+                image_path=intro_image,
+                prompt=intro_prompt,
+                duration=4,  # 4 seconds intro
+                resolution=resolution,
+                output_path=str(intro_path),
+            )
+            log(f"  ✓ Intro (4s) generated", explanation="AI-generated title card with voiceover")
+        except Exception as e:
+            log(f"  ✗ Intro failed: {e}")
+            intro_path = None
+        
+        # OUTRO: "Watch <title> exclusively on streamplus"
+        # CTA - tells viewer where to watch the full movie - using cinematic trailer style
+        # Outro: CTA with dan lafontaine style + quiet ambience
+        outro_prompt = f"A cinematic voice over of a blackscreen with white text that says \"Watch {title_text} exclusively on streamplus\" with the dan lafontaine classic cinema style voice: \"Watch {title_text} exclusively on streamplus\" - powerful, authoritative, deep bass, professional trailer voice. Quiet ambience."
+        log(f"  Generating OUTRO (3s): 'Watch {title_text} exclusively on streamplus'", explanation="CTA with cinematic trailer voiceover - drives viewers to platform")
+        outro_path = project_dir / f"bumper_outro_{actor.actor_id}.mp4"
+        try:
+            self.ltx.generate_video(
+                image_path=intro_image,  # Reuse title image
+                prompt=outro_prompt,
+                duration=3,  # 3 seconds outro
+                resolution=resolution,
+                output_path=str(outro_path),
+            )
+            log(f"  ✓ Outro (3s) generated", explanation="AI-generated end card with channel branding")
+        except Exception as e:
+            log(f"  ✗ Outro failed: {e}")
+            outro_path = None
+        
+        # Step 4: Final concatenation - [intro 4s] + [clips 12s] + [outro 3s] = 16s
+        # Stitch together all three parts: intro + archival clips + outro
+        log(f"=== Step 4: Creating final 16s spot ===", explanation="Final ffmpeg concat: [4s intro] + [12s clips] + [3s outro]")
+        final_output = project_dir / f"spot_{actor.actor_id}.mp4"
+        
+        final_concat_list = project_dir / f"final_concat_{actor.actor_id}.txt"
+        with open(final_concat_list, 'w') as f:
+            if intro_path and intro_path.exists():
+                f.write(f"file '{intro_path}'\n")
+            f.write(f"file '{combined_clips_path}'\n")
+            if outro_path and outro_path.exists():
+                f.write(f"file '{outro_path}'\n")
+        
+        try:
+            result = subprocess.run([
+                'ffmpeg', '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', str(final_concat_list),
+                '-c:v', 'libx264', '-c:a', 'aac',
+                '-preset', 'fast',
+                '-movflags', '+faststart',
+                str(final_output)
+            ], capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0 and final_output.exists():
+                log(f"  ✓ Final spot created: {final_output.name}", explanation=f"Full 16s promotional spot ready")
+                file_size_mb = final_output.stat().st_size / (1024 * 1024)
+                log(f"    File size: {file_size_mb:.1f} MB", explanation="Final deliverable")
+            else:
+                log(f"  ✗ Failed: {result.stderr[:200]}")
+                import shutil
+                shutil.copy(combined_clips_path, final_output)
+                log(f"  Using combined clips as fallback")
+        except Exception as e:
+            log(f"  ✗ Error: {e}")
+            import shutil
+            shutil.copy(combined_clips_path, final_output)
+        
+        # Update actor spot
+        actor.generated_video = str(final_output)
+        actor.voiceover_script = prompt or f"{actor.actor_name} deep cut. Ever see {title_text}? Watch {title_text} exclusively on streamplus."
+        
+        # Save updated project
+        self._save_project(project)
+        
+        log(f"=== COMPLETE: 16s promotional spot for {actor.actor_name} ===", explanation=f"Structure: 4s intro + {len(extracted_clips)*4}s archival clips + 3s outro")
+        log(f"Log saved to: {log_file}")
+        return str(final_output)
     
     def _download_image(self, url: str, name_id: str) -> str:
         """Download an image from URL and save locally."""
@@ -342,10 +567,10 @@ class TychoOrchestrator:
         """Generate a voiceover prompt for an actor spot."""
         birth_info = ""
         if actor.birth_year:
-            birth_info = f"born in {birth_year}, "
+            birth_info = f"born in {actor.birth_year}, "
         
         prompt = (
-            f"Cinematic promotional video featuring {actor.name}, "
+            f"Cinematic promotional video featuring {actor.actor_name}, "
             f"{birth_info}showing early career footage. "
             f"Warm nostalgic lighting, dramatic reveals, "
             f"professional documentary style, high quality production."

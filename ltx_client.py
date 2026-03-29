@@ -101,7 +101,9 @@ class LTXClient:
         Returns:
             GeneratedVideo object with path to the video
         """
-        if not os.path.exists(image_path):
+        # Check if it's a URL or local file
+        is_url = image_path.startswith("http://") or image_path.startswith("https://") or image_path.startswith("data:")
+        if not is_url and not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         
         # Validate parameters
@@ -111,9 +113,20 @@ class LTXClient:
         if camera_motion and camera_motion not in self.CAMERA_MOTIONS:
             raise ValueError(f"Camera motion must be one of: {self.CAMERA_MOTIONS}")
         
-        # Read image and convert to base64 or use file upload
-        # For LTX API, we need to upload the image first or use a URL
-        image_uri = self._upload_asset(image_path) if self._is_local_file(image_path) else image_path
+        # Check if it's a local file - try to use base64 instead of upload
+        if self._is_local_file(image_path):
+            import base64
+            with open(image_path, "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
+            # Determine mime type
+            mime_type = "image/jpeg"
+            if image_path.lower().endswith(".png"):
+                mime_type = "image/png"
+            elif image_path.lower().endswith(".webp"):
+                mime_type = "image/webp"
+            image_uri = f"data:{mime_type};base64,{image_data}"
+        else:
+            image_uri = image_path
         
         print(f"[LTX] Generating video with model={model_name}, duration={duration}s")
         print(f"      Prompt: {prompt[:80]}...")
@@ -194,6 +207,9 @@ class LTXClient:
     
     def _is_local_file(self, path: str) -> bool:
         """Check if path is a local file."""
+        # If it's a URL, it's not a local file
+        if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
+            return False
         return os.path.exists(path)
     
     def _upload_asset(self, file_path: str) -> str:
@@ -210,7 +226,7 @@ class LTXClient:
         
         # First, create an upload request
         response = self.session.post(
-            f"{self.BASE_URL}/upload/create-upload",
+            f"{self.BASE_URL}/upload",
             json={"filename": os.path.basename(file_path)},
         )
         
@@ -221,12 +237,35 @@ class LTXClient:
         upload_url = upload_data.get("upload_url")
         asset_id = upload_data.get("asset_id")
         
-        # Upload the file
+        if not upload_url:
+            # Maybe API returned storage_uri directly
+            return upload_data.get("storage_uri") or upload_data.get("uri")
+        
+        # Read file content and size
         with open(file_path, "rb") as f:
-            upload_response = requests.put(upload_url, data=f)
+            file_content = f.read()
+        file_size = len(file_content)
+        
+        # Determine content type from file extension
+        content_type = "image/jpeg"
+        if file_path.lower().endswith(".png"):
+            content_type = "image/png"
+        elif file_path.lower().endswith(".webp"):
+            content_type = "image/webp"
+        
+        # Upload the file with proper headers matching GCS signed URL requirements
+        # Must include content-length to satisfy x-goog-content-length-range
+        upload_response = requests.put(
+            upload_url, 
+            data=file_content,
+            headers={
+                "Content-Type": content_type,
+                "Content-Length": str(file_size),
+            }
+        )
         
         if upload_response.status_code not in (200, 201):
-            raise RuntimeError(f"Failed to upload file: {upload_response.text}")
+            raise RuntimeError(f"Failed to upload file: {upload_response.status_code} - {upload_response.text}")
         
         # Return the asset URI
         return f"asset://{asset_id}"

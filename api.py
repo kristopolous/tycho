@@ -100,6 +100,8 @@ class ProjectResponse(BaseModel):
     status: str  # "processing", "ready", "error"
     actors: List[ActorSpotResponse]
     metadata: dict
+    title_text: str = ""
+    title_image_url: str = ""
 
 
 class ProjectListItem(BaseModel):
@@ -276,9 +278,35 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
         raise HTTPException(status_code=400, detail="No clips found for this actor")
 
     try:
-        # Load project object
-        from tycho import TychoProject
-        project_obj = TychoProject(**project_data)
+        # Load project object - need to convert dict actors to ActorSpot objects
+        from tycho import TychoProject, ActorSpot
+        
+        # Convert actors dicts to ActorSpot objects
+        actors_list = []
+        for a in project_data.get("actors", []):
+            actor_spot = ActorSpot(
+                actor_name=a["actor_name"],
+                actor_id=a["actor_id"],
+                birth_year=a.get("birth_year"),
+                headshot_url=a["headshot_url"],
+                clips=a.get("clips", []),
+                generated_video=a.get("generated_video"),
+                voiceover_script=a.get("voiceover_script"),
+            )
+            actors_list.append(actor_spot)
+        
+        project_obj = TychoProject(
+            project_id=project_data["project_id"],
+            source_video=project_data["source_video"],
+            source_video_id=project_data["source_video_id"],
+            imdb_title_id=project_data["imdb_title_id"],
+            created_at=project_data["created_at"],
+            actors=actors_list,
+            metadata=project_data.get("metadata", {}),
+            status=project_data.get("status", "ready"),
+            title_text=project_data.get("title_text", ""),
+            title_image_url=project_data.get("title_image_url", ""),
+        )
         
         # Generate the spot
         video_path = orchestrator.generate_spot(
@@ -296,9 +324,15 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
         for a in project_data["actors"]:
             if a["actor_name"] == actor["actor_name"]:
                 a["generated_video"] = video_path
-                a["voiceover_script"] = request.prompt or orchestrator._generate_voiceover_prompt(
-                    type('ActorSpot', (), actor)()
+                # Create proper ActorSpot object for voiceover generation
+                actor_spot = ActorSpot(
+                    actor_name=actor["actor_name"],
+                    actor_id=actor["actor_id"],
+                    birth_year=actor.get("birth_year"),
+                    headshot_url=actor["headshot_url"],
+                    clips=actor.get("clips", []),
                 )
+                a["voiceover_script"] = request.prompt or orchestrator._generate_voiceover_prompt(actor_spot)
                 break
         
         save_project(project_id, project_data)
