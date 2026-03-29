@@ -39,6 +39,42 @@ body {
 
 .input-group { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
 
+.video-input-group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.video-input-group input {
+    flex: 1;
+}
+
+.upload-btn-label {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 0 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 80px;
+    transition: all 0.2s ease;
+    height: auto;
+}
+
+.upload-btn-label:hover {
+    border-color: var(--primary);
+    color: var(--text);
+}
+
+.upload-btn-label.file-selected {
+    border-color: var(--success);
+    color: var(--success);
+}
+
 .input-wrapper { flex: 1; min-width: 200px; }
 
 label { display: block; margin-bottom: 0.5rem; color: var(--text-secondary); }

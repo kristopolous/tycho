@@ -33,6 +33,8 @@ from get_actors import fetch_cast_with_images, init_cache, get_title_metadata
 from twelvelabs_client import TwelveLabsClient
 from ltx_client import LTXClient
 from tycho import TychoOrchestrator, TychoProject, ActorSpot
+from exports import ExportEngine
+from mam_dam import MAMIntegration
 
 # Create API router with /api prefix
 router = APIRouter()
@@ -45,8 +47,10 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 THUMBNAIL_CACHE_DIR = OUTPUT_DIR / "thumbnails"
 THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Initialize orchestrator
+# Initialize engines
 orchestrator = TychoOrchestrator(output_dir=str(OUTPUT_DIR))
+export_engine = ExportEngine(output_dir=str(OUTPUT_DIR))
+mam_engine = MAMIntegration(output_dir=str(OUTPUT_DIR))
 
 
 # ============== Pydantic Models ==============
@@ -525,10 +529,6 @@ async def get_imdb_cast(imdb_title_id: str, limit: int = 20):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ============== Error Handlers ==============
-
-
-
 # ============== Main ==============
 
 if __name__ == "__main__":
@@ -549,4 +549,6 @@ if __name__ == "__main__":
     
     port = find_free_port()
     print(f"Starting Tycho API on port {port}...")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Get the current filename without extension
+    module_name = Path(__file__).stem
+    uvicorn.run(f"{module_name}:app", host="0.0.0.0", port=port, reload=True)

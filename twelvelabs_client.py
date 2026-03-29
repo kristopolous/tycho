@@ -171,38 +171,103 @@ class TwelveLabsClient:
         Args:
             headshot_path: Can be a local file path OR a URL to an image
         """
+        return self.search_actor_with_images(
+            headshot_paths=[headshot_path],
+            actor_name=actor_name,
+            actor_id=actor_id,
+            max_results=max_results
+        )
+    
+    def search_actor_with_images(
+        self,
+        headshot_paths: List[str],
+        actor_name: str,
+        actor_id: str,
+        max_results: int = 20
+    ) -> List[ClipMatch]:
+        """
+        Search for an actor in indexed videos using multiple headshots.
+        
+        Args:
+            headshot_paths: List of local file paths OR URLs to images
+            actor_name: Actor name for logging
+            actor_id: Actor ID for result
+            max_results: Maximum number of results
+            
+        Returns:
+            List of ClipMatch objects with timestamps where actor appears
+        """
         print(f"\n[12Labs] {'='*60}")
         print(f"[12Labs] Searching for {actor_name} in video...")
-        print(f"[12Labs] Headshot: {headshot_path}")
+        print(f"[12Labs] Using {len(headshot_paths)} image(s)")
+        
+        for i, path in enumerate(headshot_paths, 1):
+            print(f"  [{i}] {path}")
 
         try:
-            # Check if it's a URL - if so, pass it directly to 12Labs (avoids downloading/large file issues)
-            if headshot_path.startswith('http://') or headshot_path.startswith('https://'):
-                print(f"[12Labs] Using URL directly (avoids large file download)")
-                search_results = self.client.search.query(
-                    index_id=self.index_id,
-                    search_options=["visual"],
-                    query_media_type="image",
-                    query_media_url=headshot_path,
-                )
-            else:
-                # It's a local file - check it exists and isn't too large
-                if not os.path.exists(headshot_path):
-                    raise FileNotFoundError(f"Headshot not found: {headshot_path}")
-                
-                # Check file size - 12Labs limit is 5.2MB
-                file_size_mb = os.path.getsize(headshot_path) / (1024 * 1024)
+            # Separate URLs from local files
+            urls = []
+            local_files = []
+            
+            for path in headshot_paths:
+                if path.startswith('http://') or path.startswith('https://'):
+                    urls.append(path)
+                else:
+                    local_files.append(path)
+            
+            # Validate local files exist
+            for path in local_files:
+                if not os.path.exists(path):
+                    raise FileNotFoundError(f"Headshot not found: {path}")
+            
+            # Build search query based on what we have
+            search_kwargs = {
+                "index_id": self.index_id,
+                "search_options": ["visual"],
+                "query_media_type": "image",
+            }
+            
+            # Add URLs or files to search
+            if len(urls) == 1 and not local_files:
+                # Single URL - use query_media_url
+                print(f"[12Labs] Using single URL directly")
+                search_kwargs["query_media_url"] = urls[0]
+            elif len(urls) > 1 and not local_files:
+                # Multiple URLs - use query_media_urls (Marengo 3.0 feature)
+                print(f"[12Labs] Using {len(urls)} URLs for multi-image search")
+                search_kwargs["query_media_urls"] = urls
+            elif len(local_files) == 1 and not urls:
+                # Single local file
+                file_size_mb = os.path.getsize(local_files[0]) / (1024 * 1024)
                 print(f"[12Labs] Headshot file size: {file_size_mb:.1f} MB")
                 if file_size_mb > 5.2:
                     print(f"[12Labs] WARNING: File too large for 12Labs (max 5.2MB), trying anyway...")
                 
-                with open(headshot_path, "rb") as f:
-                    search_results = self.client.search.query(
-                        index_id=self.index_id,
-                        search_options=["visual"],
-                        query_media_type="image",
-                        query_media_file=f,
-                    )
+                search_kwargs["query_media_file"] = open(local_files[0], "rb")
+            elif len(local_files) > 1 and not urls:
+                # Multiple local files
+                print(f"[12Labs] Using {len(local_files)} local files for multi-image search")
+                search_kwargs["query_media_files"] = [
+                    open(f, "rb") for f in local_files
+                ]
+            else:
+                # Mixed URLs and files - not supported by 12Labs, convert files to URLs or just use URLs
+                print(f"[12Labs] Mixed URLs and files - using URLs only ({len(urls)} URLs)")
+                if len(urls) == 1:
+                    search_kwargs["query_media_url"] = urls[0]
+                else:
+                    search_kwargs["query_media_urls"] = urls
+            
+            # Execute search
+            search_results = self.client.search.query(**search_kwargs)
+            
+            # Close file handles if we opened them
+            if "query_media_file" in search_kwargs and hasattr(search_kwargs["query_media_file"], 'close'):
+                search_kwargs["query_media_file"].close()
+            if "query_media_files" in search_kwargs:
+                for f in search_kwargs["query_media_files"]:
+                    if hasattr(f, 'close'):
+                        f.close()
 
             # LOG EVERY SINGLE CLIP FROM API
             print(f"[12Labs] RAW API RESPONSE - All clips:")
@@ -269,6 +334,7 @@ def main():
     parser = argparse.ArgumentParser(description="Test 12Labs integration")
     parser.add_argument("--video", type=str, help="Video file to upload")
     parser.add_argument("--headshot", type=str, help="Headshot image to search")
+    parser.add_argument("--headshots", type=str, nargs="+", help="Multiple headshot images for multi-image search")
     parser.add_argument("--actor", type=str, default="Test Actor", help="Actor name")
     parser.add_argument("--cleanup", action="store_true", help="Delete index after test")
     
@@ -283,13 +349,28 @@ def main():
             video_id = client.upload_video(args.video)
             print(f"\nUploaded video: {video_id}")
         
-        # Search with headshot if provided
-        if args.headshot and video_id:
-            clips = client.search_actor_in_video(
-                headshot_path=args.headshot,
-                actor_name=args.actor,
-                actor_id="nm0000000",
-            )
+        # Search with headshot(s) if provided
+        if video_id and (args.headshot or args.headshots):
+            # Determine which images to use
+            if args.headshots:
+                headshot_paths = args.headshots
+            else:
+                headshot_paths = [args.headshot]
+            
+            # Use multi-image search if more than one image
+            if len(headshot_paths) > 1:
+                print(f"\nUsing multi-image search with {len(headshot_paths)} images...")
+                clips = client.search_actor_with_images(
+                    headshot_paths=headshot_paths,
+                    actor_name=args.actor,
+                    actor_id="nm0000000",
+                )
+            else:
+                clips = client.search_actor_in_video(
+                    headshot_path=headshot_paths[0],
+                    actor_name=args.actor,
+                    actor_id="nm0000000",
+                )
             
             print(f"\nFound {len(clips)} clips:")
             for clip in clips:

@@ -33,17 +33,14 @@ Tycho leverages **TwelveLabs Marengo 3.0** (via AWS Bedrock/SaaS) for multimodal
 *   **Low-Res Robustness:** Marengo’s embedding-based search is significantly more resilient to the grain, low resolution, and lighting challenges of 1970s/80s archival footage than traditional geometric face-matching.
 *   **Temporal Understanding:** The system identifies precise start/end timestamps for every actor's appearance, facilitating automated clip extraction.
 
-### 2.3 Modular Promotional Harnesses
-A core design principle of Tycho is the decoupling of **Discovery** from **Creative Packaging** through the "Harness" abstraction.
-*   **Harness Directory (`/harnesses`):** This directory contains JSON specifications that define the structure and content of promotional assets.
-*   **Modular "Formulas":** A Harness (e.g., `tiktok.json`) defines a `sequence` of items:
-    - **`generative`**: AI-generated video (LTX) using f-string prompts with IMDb data.
-    - **`clip`**: Specific archival segments with guidance for scene selection.
-*   **Industry-Standard Exports:** Every harness now specifies a set of required `exports` (e.g., **AAF** for Avid, **EDL** for Premiere/Resolve, and **MP4** for direct review). This allows for seamless hand-off to professional editors and influencers.
-*   **Harness Optimization:** Media managers can deploy multiple Harnesses for a single actor. Over time, the system identifies the best-performing Talent/Platform/Formula combination.
-    - *TikTok:* High-energy, 15s vertical sizzle.
-    - *Instagram:* Aesthetic, character-focused 1:1 reel.
-    - *Pack:* A "Creator Kit" containing high-quality clip libraries and branding for influencer reviews.
+### 2.3 Channel & Harness Optimization Model
+A core design principle of Tycho is the decoupling of **Discovery** (finding the talent) from the **Harness** (the creative formula) and the **Channel** (the distribution platform).
+
+*   **Distribution Channels:** Define the platform-specific constraints (e.g., **TikTok** 9:16, **Instagram** 1:1, **YouTube** 16:9).
+*   **Creative Harnesses:** Defined in `/harnesses`, these JSON formulas specify the "beat sheet" of the asset:
+    - **Generative Beats**: AI-generated hooks (LTX) tailored to the strategy (e.g., "Nostalgic" vs "Hype").
+    - **Clip Beats**: Specific archival segments selected based on search confidence and "guidance" strings.
+*   **Convergence Architecture:** The system is designed to facilitate click-tracking and engagement analysis. By generating multiple **Harness + Channel** variants for a single actor, media managers can identify which "Formula" converges best for specific talent types (e.g., "Action Stars" vs "Character Actors").
 
 ### 2.4 Creator Enablement Pipeline
 To drive organic traffic, Tycho can be configured to output "Clip Kits."

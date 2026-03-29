@@ -23,6 +23,16 @@ import requests
 # API Configuration
 BASE_URL = "https://api.imdbapi.dev"
 
+# TMDB integration (optional)
+TMDB_AVAILABLE = False
+get_combined_headshots = None
+init_tmdb_cache = None
+try:
+    from tmdb_client import get_combined_headshots, init_cache as init_tmdb_cache
+    TMDB_AVAILABLE = True
+except ImportError:
+    pass
+
 # Cache configuration
 CACHE_DIR = Path(__file__).parent / ".cache"
 CACHE_DB = CACHE_DIR / "imdb_cache.db"
@@ -288,19 +298,35 @@ def get_title_metadata(title_id: str) -> dict:
     }
 
 
-def fetch_cast_with_images(title_id: str, limit: int = 20) -> list:
+def fetch_cast_with_images(title_id: str, limit: int = 20, use_tmdb: bool = False, max_tmdb_images: int = 2) -> list:
     """
     Fetch cast members with their details and headshots.
+    
+    Args:
+        title_id: IMDb title ID
+        limit: Maximum number of cast members
+        use_tmdb: Whether to also fetch TMDB headshots for multi-image search
+        max_tmdb_images: Number of TMDB images to fetch per actor (when use_tmdb=True)
     
     Returns a list of dicts with:
     - name_id, name, category, characters
     - primary_image (from name details)
     - birth_date (for contemporaneous matching)
     - images (list of headshots)
+    - all_headshots (list of all image URLs - IMDB + TMDB for multi-image search)
     """
     print(f"\n{'='*60}")
     print(f"Fetching cast for title: {title_id}")
+    if use_tmdb:
+        print(f"Using TMDB for additional headshots (max {max_tmdb_images} per actor)")
     print(f"{'='*60}\n")
+    
+    # Initialize TMDB cache if needed
+    if use_tmdb and TMDB_AVAILABLE:
+        try:
+            init_tmdb_cache()
+        except Exception as e:
+            print(f"[TMDB] Warning: Could not initialize cache: {e}")
     
     # Step 1: Get credits
     print("[1/3] Fetching credits...")
@@ -317,11 +343,12 @@ def fetch_cast_with_images(title_id: str, limit: int = 20) -> list:
     for i, credit in enumerate(credits, 1):
         name_obj = credit.get("name", {})
         name_id = name_obj.get("id")
+        actor_name = name_obj.get('displayName', 'Unknown')
         
         if not name_id:
             continue
         
-        print(f"      [{i}/{len(credits)}] {name_obj.get('displayName', 'Unknown')} ({name_id})")
+        print(f"      [{i}/{len(credits)}] {actor_name} ({name_id})")
         
         # Get name details
         try:
@@ -339,9 +366,31 @@ def fetch_cast_with_images(title_id: str, limit: int = 20) -> list:
             print(f"            Error fetching images: {e}")
             images = []
         
+        # Get primary image URL
+        primary_image_url = None
+        if name_details.get("primaryImage"):
+            primary_image_url = name_details["primaryImage"].get("url")
+        
+        # Get TMDB headshots if enabled
+        all_headshots = []
+        if use_tmdb and TMDB_AVAILABLE and primary_image_url:
+            try:
+                all_headshots = get_combined_headshots(
+                    imdb_headshot_url=primary_image_url,
+                    actor_name=actor_name,
+                    imdb_id=name_id,
+                    max_tmdb_images=max_tmdb_images
+                )
+                print(f"            Combined {len(all_headshots)} headshots (IMDB + TMDB)")
+            except Exception as e:
+                print(f"            Error fetching TMDB headshots: {e}")
+                all_headshots = [primary_image_url] if primary_image_url else []
+        elif primary_image_url:
+            all_headshots = [primary_image_url]
+        
         cast_member = {
             "name_id": name_id,
-            "name": name_obj.get("displayName"),
+            "name": actor_name,
             "category": credit.get("category"),
             "characters": credit.get("characters", []),
             "episode_count": credit.get("episodeCount"),
@@ -350,10 +399,11 @@ def fetch_cast_with_images(title_id: str, limit: int = 20) -> list:
             "birth_location": name_details.get("birthLocation"),
             "primary_professions": name_details.get("primaryProfessions"),
             "images": images,
+            "all_headshots": all_headshots,  # IMDB + TMDB URLs for multi-image search
         }
         
         cast_with_details.append(cast_member)
-        print(f"            Images: {len(images)}")
+        print(f"            Images: {len(images)} | All Headshots: {len(all_headshots)}")
     
     print(f"\n[3/3] Complete! Cached {len(cast_with_details)} cast members\n")
     
@@ -413,6 +463,17 @@ def main():
         action="store_true",
         help="Clear the cache before fetching"
     )
+    parser.add_argument(
+        "--use-tmdb",
+        action="store_true",
+        help="Use TMDB to fetch additional headshots for multi-image search"
+    )
+    parser.add_argument(
+        "--tmdb-images",
+        type=int,
+        default=2,
+        help="Number of TMDB images to fetch per actor (default: 2)"
+    )
     
     args = parser.parse_args()
     
@@ -425,7 +486,12 @@ def main():
     init_cache()
     
     # Fetch cast with images
-    cast_members = fetch_cast_with_images(args.title_id, limit=args.limit)
+    cast_members = fetch_cast_with_images(
+        args.title_id, 
+        limit=args.limit,
+        use_tmdb=args.use_tmdb,
+        max_tmdb_images=args.tmdb_images
+    )
     
     # Print summary
     print_cast_summary(cast_members, args.title_id)

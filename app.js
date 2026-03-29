@@ -69,6 +69,17 @@ function updateProcessStatus(steps) {
 findContentBtn.addEventListener('click', handleContentSearch);
 imdbInput.addEventListener('input', validateImdbId);
 
+// Handle Video Upload Selection
+videoUploadInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        selectedFile = e.target.files[0];
+        uploadLabel.classList.add('file-selected');
+        uploadLabel.querySelector('span').textContent = 'Selected';
+        videoPathInput.value = selectedFile.name;
+        videoPathInput.disabled = true;
+    }
+});
+
 // Harness Library Interactivity
 document.querySelectorAll('.harness-card').forEach(card => {
     card.addEventListener('click', () => {
@@ -142,7 +153,7 @@ function getVideoUrl(projectId, actorId) {
 // Content Search
 async function handleContentSearch() {
     const imdbId = imdbInput.value.trim();
-    const videoPath = videoPathInput.value.trim() || DEFAULT_VIDEO;
+    const videoSource = selectedFile || videoPathInput.value.trim() || DEFAULT_VIDEO;
     if (!imdbId || isProcessing) return;
 
     isProcessing = true;
@@ -305,6 +316,21 @@ window.handleExport = async function(actorId) {
             body: JSON.stringify({ actor_id: actorId, format: format }),
         });
         const result = await response.json();
+        window.open(`${API_BASE_URL}${result.file_url}`, '_blank');
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = 'Download'; btn.disabled = false; }, 2000);
+    } catch (error) {
+        console.error(error);
+        btn.textContent = 'Err';
+        btn.disabled = false;
+    }
+};
+
+// Initial state restore
+if (restoreState()) {
+    handleContentSearch();
+}
+lt = await response.json();
         window.open(`${API_BASE_URL}${result.file_url}`, '_blank');
         btn.textContent = '✓';
         setTimeout(() => { btn.textContent = 'Download'; btn.disabled = false; }, 2000);

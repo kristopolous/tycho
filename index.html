@@ -23,8 +23,14 @@
                     <input type="text" id="imdbId" placeholder="e.g., tt0058331" pattern="tt\d+" required>
                 </div>
                 <div class="input-wrapper">
-                    <label for="videoPath">Video File Path</label>
-                    <input type="text" id="videoPath" placeholder="content.mp4" value="content.mp4">
+                    <label for="videoSource">Video Source</label>
+                    <div class="video-input-group">
+                        <input type="text" id="videoPath" placeholder="Path (e.g. content.mp4) or URL (S3/HTTP)" value="content.mp4">
+                        <label for="videoUpload" class="upload-btn-label">
+                            <span>Upload</span>
+                            <input type="file" id="videoUpload" class="hidden" accept="video/*">
+                        </label>
+                    </div>
                 </div>
                 <div class="input-wrapper">
                     <label for="harnessSelect">Harness</label>

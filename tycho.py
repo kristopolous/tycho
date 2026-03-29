@@ -81,6 +81,8 @@ class TychoOrchestrator:
         actor_names: Optional[List[str]] = None,
         max_actors: int = 10,
         index_name: Optional[str] = None,
+        use_tmdb: bool = False,
+        max_tmdb_images: int = 2,
     ) -> TychoProject:
         """
         Create a Tycho project for a video.
@@ -104,7 +106,9 @@ class TychoOrchestrator:
         
         # Step 1: Get cast from IMDb and title metadata
         print("[Step 1/6] Fetching cast and title info from IMDb...")
-        cast = fetch_cast_with_images(imdb_title_id, limit=max_actors)
+        if use_tmdb:
+            print(f"      Using TMDB for additional headshots ({max_tmdb_images} images per actor)")
+        cast = fetch_cast_with_images(imdb_title_id, limit=max_actors, use_tmdb=use_tmdb, max_tmdb_images=max_tmdb_images)
         
         # Get title metadata (title text and artwork)
         title_info = get_title_metadata(imdb_title_id)
@@ -143,16 +147,18 @@ class TychoOrchestrator:
                 # Working index not found - fall back to search by tt_id name
                 print(f"[12Labs] Working index {working_index_id} not found, searching...")
                 for idx in indexes:
-                    index_name = getattr(idx, 'index_name', '')
-                    if imdb_title_id in index_name:
-                        self.twelvelabs.set_index(idx.id)
-                        print(f"[12Labs] ✓ Using existing index: {idx.id} ({index_name})")
+                    if not idx.id:
+                        continue
+                    idx_name = getattr(idx, 'index_name', '')
+                    if idx_name and imdb_title_id in idx_name:
+                        self.twelvelabs.set_index(str(idx.id))
+                        print(f"[12Labs] ✓ Using existing index: {idx.id} ({idx_name})")
                         break
                 else:
                     # Last resort - create new index
-                    index_name = f"tycho_{imdb_title_id}"
-                    self.twelvelabs.create_index(index_name)
-                    print(f"[12Labs] Created new index: {index_name}")
+                    new_index_name = f"tycho_{imdb_title_id}"
+                    self.twelvelabs.create_index(new_index_name)
+                    print(f"[12Labs] Created new index: {new_index_name}")
         except Exception as e:
             print(f"[12Labs] Warning: {e}")
             # Last resort: try the working index anyway
@@ -184,16 +190,31 @@ class TychoOrchestrator:
             # Use the headshot URL directly - 12Labs can handle URLs without downloading!
             # This avoids the 10.7MB file size issue with IMDb images
             headshot_url = headshot['url']
-            headshot_path = headshot_url  # Pass URL directly to 12Labs client
             
-            # Search for this actor in the video - request more results to get diverse clips
+            # Get all headshots for multi-image search (includes TMDB if available)
+            all_headshots = actor.get('all_headshots', [headshot_url]) if headshot_url else []
+            
+            if not all_headshots:
+                print(f"      Skipping {actor['name']}: No headshots available")
+                continue
+            
+            # Search for this actor in the video - use multi-image search for better results
             try:
-                clips = self.twelvelabs.search_actor_in_video(
-                    headshot_path=headshot_path,
-                    actor_name=actor['name'],
-                    actor_id=actor['name_id'],
-                    max_results=20,  # Get more results to find diverse clips
-                )
+                if len(all_headshots) > 1:
+                    print(f"      {actor['name']}: Using {len(all_headshots)} headshots for multi-image search")
+                    clips = self.twelvelabs.search_actor_with_images(
+                        headshot_paths=all_headshots,
+                        actor_name=actor['name'],
+                        actor_id=actor['name_id'],
+                        max_results=20,  # Get more results to find diverse clips
+                    )
+                else:
+                    clips = self.twelvelabs.search_actor_in_video(
+                        headshot_path=all_headshots[0],
+                        actor_name=actor['name'],
+                        actor_id=actor['name_id'],
+                        max_results=20,
+                    )
             except Exception as e:
                 print(f"      {actor['name']}: Search error - {e}")
                 clips = []
@@ -257,7 +278,7 @@ class TychoOrchestrator:
         project = TychoProject(
             project_id=f"tycho_{imdb_title_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             source_video=video_path,
-            source_video_id=video_id,
+            source_video_id=video_id or "",
             imdb_title_id=imdb_title_id,
             created_at=datetime.now().isoformat(),
             actors=actor_spots,
@@ -685,6 +706,8 @@ def main():
     parser.add_argument("--duration", type=int, default=10, help="Generated video duration (seconds)")
     parser.add_argument("--output", type=str, default="outputs", help="Output directory")
     parser.add_argument("--index-name", type=str, help="Custom 12Labs index name")
+    parser.add_argument("--use-tmdb", action="store_true", help="Fetch additional headshots from TMDB for better search")
+    parser.add_argument("--tmdb-images", type=int, default=2, help="Number of TMDB images to fetch per actor (default: 2)")
     
     args = parser.parse_args()
     
@@ -698,6 +721,8 @@ def main():
         actor_names=args.actor,
         max_actors=args.max_actors,
         index_name=args.index_name,
+        use_tmdb=args.use_tmdb,
+        max_tmdb_images=args.tmdb_images,
     )
     
     # Generate spot for specific actor if requested
