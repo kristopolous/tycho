@@ -72,8 +72,4 @@ Watch the magic happen. 🎬
 - **IMDb** (imdbapi.dev) - Cast data & headshots
 - **12Labs** - Find actors in video via visual search
 - **LTX** - AI video generation
-- **FastAPI** - Backend API
-
----
-
-**Hackathon ready. Questions? Just ask.** 🚀
+- **Bedrock** - Amazong Bedrock
