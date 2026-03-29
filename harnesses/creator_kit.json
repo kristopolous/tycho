@@ -1,0 +1,32 @@
+{
+  "name": "creator_kit_v1",
+  "description": "Raw, high-quality asset pack for organic reviews and influencer collaborations.",
+  "exports": ["AAF", "EDL", "MP4"],
+  "sequence": [
+    {
+      "type": "generative",
+      "duration": 5,
+      "prompt": "Professional documentary-style branded intro card for {actor_name} in {title_text}. Neutral background with clean text: 'Creator Asset Pack: {actor_name} Highlights'. NO voiceover."
+    },
+    {
+      "type": "clip",
+      "duration": 8,
+      "guidance": "Highest-confidence scene of {actor_name} with clear dialogue"
+    },
+    {
+      "type": "clip",
+      "duration": 8,
+      "guidance": "Visually striking wide shot or action scene featuring {actor_name}"
+    },
+    {
+      "type": "clip",
+      "duration": 8,
+      "guidance": "Tight reaction shot or dramatic close-up of {actor_name}"
+    },
+    {
+      "type": "generative",
+      "duration": 3,
+      "prompt": "Simple outro card with licensing info: 'Pre-cleared for use in reviews. Credits: {title_text}'."
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "hype_v1",
+  "description": "High-energy, fast-paced sizzle optimized for high retention and excitement.",
+  "exports": ["EDL", "MP4"],
+  "sequence": [
+    {
+      "type": "generative",
+      "duration": 3,
+      "prompt": "Cinematic high-energy hook for {actor_name} in {title_text}. Dramatic text overlay: '{actor_name} DEEP CUT'. Powerful trailer voice: 'You won't believe where {actor_name} started.'"
+    },
+    {
+      "type": "clip",
+      "duration": 4,
+      "guidance": "High-action or emotional closeup of {actor_name}"
+    },
+    {
+      "type": "clip",
+      "duration": 4,
+      "guidance": "A second distinct scene featuring {actor_name} in a key moment"
+    },
+    {
+      "type": "generative",
+      "duration": 4,
+      "prompt": "Fast-paced high-impact outro for {title_text}. Vibrant text: 'WATCH NOW'. Professional VO: 'Catch the full episode of {title_text} only on our platform. Link in bio!'"
+    }
+  ]
+}

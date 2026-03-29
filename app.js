@@ -232,13 +232,31 @@ function displayContent(castData, project) {
             ).join('');
             thumbnailsHtml = `<div class="clip-thumbnails">${thumbnails}</div>`;
         }
+
+        // Multi-source Reference Images
+        let referenceImagesHtml = '';
+        const headshots = actor.all_headshots || (actor.headshot_url ? [actor.headshot_url] : []);
+        if (headshots.length > 0) {
+            const images = headshots.map((url, i) => `
+                <div class="ref-image-wrapper">
+                    <img src="${url}" class="ref-image" title="${i === 0 ? 'IMDb' : 'TMDB'} Source">
+                    <span class="ref-source-tag">${i === 0 ? 'IMDb' : 'TMDB'}</span>
+                </div>
+            `).join('');
+            referenceImagesHtml = `<div class="reference-images-strip">${images}</div>`;
+        }
         
         return `
         <div class="actor-card fade-in" data-actor-id="${actor.name_id}">
-            <img src="${actor.headshot_url || 'https://via.placeholder.com/300x400?text=No+Image'}" onerror="this.src='https://via.placeholder.com/300x400?text=No+Image'">
+            <img src="${actor.headshot_url || 'https://via.placeholder.com/300x400?text=No+Image'}" onerror="this.src='https://via.placeholder.com/300x400?text=No+Image'}" class="main-headshot">
             <div class="actor-info">
                 <h3>${actor.name}</h3>
                 <p class="character">${actor.characters?.join(', ') || ''}</p>
+                
+                <div class="ref-section-label">Reference Sources</div>
+                ${referenceImagesHtml}
+
+                <div class="ref-section-label">Discovered Clips</div>
                 ${thumbnailsHtml}
                 ${isFound ? `
                     <div class="action-area">
