@@ -1,5 +1,6 @@
 # Secrets
 .env
+.envrc
 
 # Python
 __pycache__/
@@ -29,3 +30,4 @@ Thumbs.db
 *.webm
 *.mov
 outputs/
+qwen

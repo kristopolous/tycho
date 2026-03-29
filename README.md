@@ -50,19 +50,20 @@ python -m http.server 3000
 ### 4. Open Browser
 http://localhost:3000
 
-Enter `tt0058331` (Mary Poppins) and click **Find Content**.
+Enter `tt0310917` (The Day After Tomorrow) and click **Find Content**.
 
 ---
 
 ## Demo
 
-**Use the included `coke.mp4` with Mary Poppins (1964):**
+**Use your own `content.mp4` with The Day After Tomorrow (2004):**
 
-1. Open http://localhost:3000
-2. IMDb ID: `tt0058331`
-3. Video: `coke.mp4`
-4. Click **Find Content**
-5. Click **Generate Spot** for any actor
+1. Place your video file as `content.mp4` in the project directory
+2. Open http://localhost:3000
+3. IMDb ID: `tt0310917`
+4. Video: `content.mp4`
+5. Click **Find Content**
+6. Click **Generate Spot** for any actor
 
 Watch the magic happen. 🎬
 

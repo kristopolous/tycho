@@ -4,6 +4,9 @@
 // Configuration
 const API_BASE_URL = 'http://localhost:8000';
 
+// Default video for testing (under 5.2 MB limit for 12Labs)
+const DEFAULT_VIDEO = 'coke.webm';
+
 // DOM Elements
 const imdbInput = document.getElementById('imdbId');
 const videoPathInput = document.getElementById('videoPath');
@@ -50,7 +53,7 @@ async function fetchCastFromIMDB(imdbId) {
     return response.json();
 }
 
-async function createProject(imdbId, videoPath = 'coke.mp4') {
+async function createProject(imdbId, videoPath = 'content.mp4') {
     const response = await fetch(`${API_BASE_URL}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -95,7 +98,7 @@ async function getProject(projectId) {
 // Content Search
 async function handleContentSearch() {
     const imdbId = imdbInput.value.trim();
-    const videoPath = videoPathInput.value.trim() || 'coke.mp4';
+    const videoPath = videoPathInput.value.trim() || 'content.mp4';
     if (!imdbId) return;
 
     try {
@@ -125,7 +128,11 @@ async function handleContentSearch() {
 function displayContent(castData, project) {
     contentTitle.textContent = `IMDb: ${castData.imdb_title_id} - ${castData.cast_count} Cast Members Found`;
 
-    actorsGrid.innerHTML = castData.cast.map(actor => `
+    actorsGrid.innerHTML = castData.cast.map(actor => {
+        const clipCount = getActorClipCount(actor.name_id, project);
+        const isFound = clipCount > 0;
+        
+        return `
         <div class="actor-card fade-in" data-actor-id="${actor.name_id}">
             <img src="${actor.headshot_url || 'https://via.placeholder.com/300x400?text=No+Image'}" 
                  alt="${actor.name}"
@@ -134,14 +141,15 @@ function displayContent(castData, project) {
                 <h3>${actor.name}</h3>
                 <p class="character">${actor.characters?.join(', ') || actor.category}</p>
                 ${actor.birth_year ? `<p class="birth-year">Born: ${actor.birth_year}</p>` : ''}
+                ${!isFound ? `<p class="not-found">Not found in video</p>` : ''}
                 <button class="generate-btn" 
                         onclick="handleGenerateSpot('${actor.name}', '${actor.name_id}')"
-                        ${!actorHasClips(actor.name_id, project) ? 'disabled' : ''}>
-                    ${actorHasClips(actor.name_id, project) ? 'Generate Spot' : 'Not Found in Video'}
+                        ${!isFound ? 'disabled' : ''}>
+                    ${isFound ? 'Generate Spot' : 'Not Found'}
                 </button>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 
     contentDetails.classList.remove('hidden');
     generationStatus.classList.remove('hidden');
@@ -150,6 +158,11 @@ function displayContent(castData, project) {
 function actorHasClips(actorId, project) {
     const actor = project.actors?.find(a => a.actor_id === actorId);
     return actor && actor.clips && actor.clips.length > 0;
+}
+
+function getActorClipCount(actorId, project) {
+    const actor = project.actors?.find(a => a.actor_id === actorId);
+    return actor ? (actor.clips?.length || 0) : 0;
 }
 
 function updateGenerationStatus(actorName, status, message, videoUrl = null) {

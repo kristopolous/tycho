@@ -37,7 +37,19 @@ body {
     padding: 4rem 2rem;
 }
 
-.hero h1 {
+.brand-text {
+    font-family: "Tac One", sans-serif;
+    font-weight: 400;
+    font-style: normal;
+    font-size: 5rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(45deg, var(--primary), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: 0.1em;
+}
+
+.hero h1:not(.brand-text) {
     font-size: 3rem;
     margin-bottom: 1rem;
     background: linear-gradient(45deg, var(--primary), var(--accent));
@@ -59,6 +71,18 @@ body {
     display: flex;
     gap: 1rem;
     align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.input-wrapper {
+    flex: 1;
+    min-width: 200px;
+}
+
+.input-hint {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
 }
 
 label {
@@ -146,6 +170,77 @@ input:focus {
     font-size: 0.9rem;
 }
 
+.character {
+    font-style: italic;
+    margin-bottom: 0.25rem !important;
+}
+
+.birth-year {
+    font-size: 0.8rem !important;
+    color: var(--text-secondary);
+}
+
+.not-found {
+    font-size: 0.85rem !important;
+    color: var(--warning);
+    font-style: italic;
+}
+
+.generate-btn {
+    width: 100%;
+    margin-top: 0.75rem;
+    padding: 0.5rem;
+    background: var(--primary);
+    color: var(--text);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.generate-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(158, 127, 255, 0.3);
+}
+
+.generate-btn:disabled {
+    background: var(--border);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.generate-small-btn {
+    padding: 0.25rem 0.75rem;
+    background: var(--primary);
+    color: var(--text);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    margin-left: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.generate-small-btn:hover:not(:disabled) {
+    background: var(--secondary);
+}
+
+.download-btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: var(--success);
+    color: var(--text);
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+}
+
+.download-btn:hover {
+    background: #059669;
+}
+
 .status-list {
     display: grid;
     gap: 1rem;
@@ -154,7 +249,7 @@ input:focus {
 .status-item {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     background: var(--surface);
     padding: 1rem;
     border-radius: 8px;
@@ -164,6 +259,13 @@ input:focus {
     display: flex;
     align-items: center;
     gap: 1rem;
+}
+
+.status-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
 }
 
 .status-indicator {

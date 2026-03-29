@@ -198,12 +198,15 @@ async def create_project(request: CreateProjectRequest):
     
     try:
         # Create project (without generation)
+        # Use tt_id-based index name for consistency and reuse
+        index_name = request.index_name or f"tycho_{request.imdb_title_id}"
+        
         project = orchestrator.create_project(
             video_path=str(video_path),
             imdb_title_id=request.imdb_title_id,
             actor_names=request.actor_names,
             max_actors=request.max_actors,
-            index_name=request.index_name or f"tycho_{request.imdb_title_id}",
+            index_name=index_name,
         )
         
         # Rename project directory to match our ID
@@ -373,13 +376,13 @@ async def delete_project(project_id: str):
 async def get_imdb_cast(imdb_title_id: str, limit: int = 20):
     """
     Fetch cast information from IMDb for a title.
-    
+
     This is a standalone endpoint to preview cast before creating a project.
     """
     try:
         init_cache()
         cast = fetch_cast_with_images(imdb_title_id, limit=limit)
-        
+
         return {
             "imdb_title_id": imdb_title_id,
             "cast_count": len(cast),
@@ -389,8 +392,8 @@ async def get_imdb_cast(imdb_title_id: str, limit: int = 20):
                     "name": c["name"],
                     "category": c["category"],
                     "characters": c.get("characters", []),
-                    "birth_year": c.get("birth_date", {}).get("year"),
-                    "headshot_url": c.get("primary_image", {}).get("url"),
+                    "birth_year": c.get("birth_date", {}).get("year") if c.get("birth_date") else None,
+                    "headshot_url": c["primary_image"].get("url") if c.get("primary_image") else None,
                 }
                 for c in cast
             ]

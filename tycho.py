@@ -111,7 +111,8 @@ class TychoOrchestrator:
         # Step 2: Index the video with 12Labs
         print("\n[Step 2/5] Indexing video with 12Labs...")
         if index_name is None:
-            index_name = f"tycho_{imdb_title_id}_{datetime.now().strftime('%Y%m%d')}"
+            # Use consistent index name based on tt_id for reuse
+            index_name = f"tycho_{imdb_title_id}"
         
         self.twelvelabs.create_index(index_name)
         video_id = self.twelvelabs.upload_video(video_path)
@@ -130,19 +131,22 @@ class TychoOrchestrator:
             headshot_path = self._download_image(headshot['url'], actor['name_id'])
             
             # Search for this actor in the video
-            clips = self.twelvelabs.search_actor_in_video(
-                headshot_path=headshot_path,
-                actor_name=actor['name'],
-                actor_id=actor['name_id'],
-                video_id=video_id,
-                max_results=5,
-            )
+            try:
+                clips = self.twelvelabs.search_actor_in_video(
+                    headshot_path=headshot_path,
+                    actor_name=actor['name'],
+                    actor_id=actor['name_id'],
+                    max_results=5,
+                )
+            except Exception as e:
+                print(f"      {actor['name']}: Search error - {e}")
+                clips = []
             
             if clips:
                 birth_year = None
                 if actor.get('birth_date') and actor['birth_date'].get('year'):
                     birth_year = actor['birth_date']['year']
-                
+
                 spot = ActorSpot(
                     actor_name=actor['name'],
                     actor_id=actor['name_id'],
@@ -153,7 +157,20 @@ class TychoOrchestrator:
                 actor_spots.append(spot)
                 print(f"      {actor['name']}: Found {len(clips)} clips")
             else:
-                print(f"      {actor['name']}: No matches found")
+                # Include actor even if not found - UI will show "not found" state
+                birth_year = None
+                if actor.get('birth_date') and actor['birth_date'].get('year'):
+                    birth_year = actor['birth_date']['year']
+                
+                spot = ActorSpot(
+                    actor_name=actor['name'],
+                    actor_id=actor['name_id'],
+                    birth_year=birth_year,
+                    headshot_url=headshot['url'],
+                    clips=[],
+                )
+                actor_spots.append(spot)
+                print(f"      {actor['name']}: Not found in video")
         
         # Step 4: Generate promotional videos (optional - can be done per-actor)
         print(f"\n[Step 4/5] Ready to generate spots for {len(actor_spots)} actors")

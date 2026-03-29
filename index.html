@@ -3,23 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tycho | Create Targeted Promos</title>
+    <title>TYCHO | Create Targeted Promos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tac+One&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <main class="container">
         <header class="hero">
-            <h1>Create Targeted Promos</h1>
+            <h1 class="brand-text">TYCHO</h1>
             <p>Generate actor-specific promotional content from your media titles</p>
         </header>
 
         <section class="content-form">
             <div class="input-group">
-                <label for="imdbId">IMDB Title ID</label>
-                <input type="text" id="imdbId" placeholder="Enter IMDB ID (e.g., tt0111161)" 
-                       pattern="tt\d+" required>
-                <button id="findContent" class="primary-btn">Find Content</button>
+                <div class="input-wrapper">
+                    <label for="imdbId">IMDb Title ID</label>
+                    <input type="text" id="imdbId" placeholder="e.g., tt0058331" pattern="tt\d+" required>
+                </div>
+                <div class="input-wrapper">
+                    <label for="videoPath">Video File Path</label>
+                    <input type="text" id="videoPath" placeholder="content.mp4" value="content.mp4">
+                </div>
+                <button id="findContent" class="primary-btn" disabled>Find Content</button>
             </div>
+            <p class="input-hint">Enter an IMDb ID to fetch cast information and find actors in your video.</p>
         </section>
 
         <section class="content-details hidden" id="contentDetails">
@@ -28,7 +37,7 @@
         </section>
 
         <section class="generation-status hidden" id="generationStatus">
-            <h3>Generation Status</h3>
+            <h3>🎬 Generation Status</h3>
             <div class="status-list" id="statusList"></div>
         </section>
     </main>

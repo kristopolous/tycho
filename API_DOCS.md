@@ -69,7 +69,7 @@ Create a new Tycho project. This initiates the full workflow:
 **Request Body:**
 ```json
 {
-  "video_path": "coke.mp4",
+  "video_path": "content.mp4",
   "imdb_title_id": "tt0058331",
   "actor_names": null,
   "max_actors": 10,
@@ -89,7 +89,7 @@ Create a new Tycho project. This initiates the full workflow:
 ```json
 {
   "project_id": "tycho_tt0058331_20260329_120000_abc123",
-  "source_video": "/path/to/coke.mp4",
+  "source_video": "/path/to/content.mp4",
   "source_video_id": "vid_12345",
   "imdb_title_id": "tt0058331",
   "created_at": "2026-03-29T12:00:00",
@@ -157,7 +157,7 @@ Get details for a specific project.
 ```json
 {
   "project_id": "tycho_tt0058331_20260329_120000_abc123",
-  "source_video": "/path/to/coke.mp4",
+  "source_video": "/path/to/content.mp4",
   "source_video_id": "vid_12345",
   "imdb_title_id": "tt0058331",
   "created_at": "2026-03-29T12:00:00",

@@ -78,7 +78,7 @@ GET /api/projects/{project_id}/video/{actor_id}
 ## User Flow
 
 1. User enters IMDb ID (e.g., `tt0058331` for Mary Poppins)
-2. User specifies video file path (default: `coke.mp4`)
+2. User specifies video file path (default: `content.mp4`)
 3. Frontend fetches cast from IMDb
 4. Frontend creates project (video is indexed with 12Labs)
 5. Actors found in video are displayed with "Generate Spot" buttons
@@ -155,7 +155,7 @@ app.add_middleware(
 
 ### Test with Mary Poppins (1964)
 - IMDb ID: `tt0058331`
-- Video: `coke.mp4`
+- Video: `content.mp4`
 
 ### Test with known cast
 1. Enter `tt0058331` in the IMDb ID field
