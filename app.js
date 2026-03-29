@@ -1,33 +1,11 @@
 // Tycho Frontend Application
 // Connects to Tycho API for actor-focused promotional video generation
 
-// Configuration
-const API_BASE_URL = 'http://localhost:8000';
+// Configuration - derive API base URL from current page location
+const API_BASE_URL = window.location.origin;
 
-// Default video for testing (under 5.2 MB limit for 12Labs)
+// Default video for testing
 const DEFAULT_VIDEO = 'coke.webm';
-
-// Auto-detect API port if 8000 is not available
-async function detectApiPort() {
-    const ports = [8000, 8001, 8002, 8003, 8004, 8005];
-    for (const port of ports) {
-        try {
-            const response = await fetch(`http://localhost:${port}/api/health`, { method: 'HEAD' });
-            if (response.ok) {
-                console.log(`API detected on port ${port}`);
-                return `http://localhost:${port}`;
-            }
-        } catch (e) {
-            // Try next port
-        }
-    }
-    return 'http://localhost:8000'; // Default fallback
-}
-
-// Initialize API URL on load
-detectApiPort().then(url => {
-    window.API_BASE_URL = url;
-});
 
 // DOM Elements
 const imdbInput = document.getElementById('imdbId');
@@ -44,13 +22,47 @@ const processSteps = document.getElementById('processSteps');
 // State
 let currentProject = null;
 let currentActors = [];
+let currentImdbId = null;
+
+// Persist state to localStorage
+function saveState() {
+    if (currentProject) {
+        localStorage.setItem('tycho_project', JSON.stringify({
+            project: currentProject,
+            imdbId: currentImdbId,
+            timestamp: Date.now()
+        }));
+    }
+}
+
+// Restore state from localStorage
+function restoreState() {
+    try {
+        const saved = localStorage.getItem('tycho_project');
+        if (saved) {
+            const data = JSON.parse(saved);
+            // Check if state is less than 1 hour old
+            if (Date.now() - data.timestamp < 3600000) {
+                currentProject = data.project;
+                currentImdbId = data.imdbId;
+                console.log('Restored project from cache:', data.imdbId);
+                return true;
+            }
+        }
+    } catch (e) {
+        console.error('Failed to restore state:', e);
+    }
+    return false;
+}
 
 // Process status tracking
 function updateProcessStatus(steps) {
     processStatus.classList.remove('hidden');
     processSteps.innerHTML = steps.map((step, i) => `
         <div class="process-step ${step.status}">
-            <div class="step-indicator ${step.status}"></div>
+            <div class="step-indicator ${step.status}">
+                ${step.status === 'active' ? '<div class="spinner-small"></div>' : ''}
+            </div>
             <span class="step-text">${step.text}</span>
             ${step.detail ? `<span class="step-detail">${step.detail}</span>` : ''}
         </div>
@@ -63,6 +75,19 @@ imdbInput.addEventListener('input', validateImdbId);
 imdbInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && findContentBtn.disabled === false) {
         handleContentSearch();
+    }
+});
+
+// Restore state on page load
+window.addEventListener('DOMContentLoaded', () => {
+    if (restoreState() && currentProject) {
+        // Fetch cast data to display
+        fetchCastFromIMDB(currentImdbId).then(castData => {
+            displayContent(castData, currentProject, true);
+        }).catch(e => {
+            console.error('Failed to fetch cast for restored project:', e);
+            localStorage.removeItem('tycho_project');
+        });
     }
 });
 
@@ -81,8 +106,7 @@ function validateImdbId(event) {
 
 // API Functions
 async function fetchCastFromIMDB(imdbId) {
-    const baseUrl = window.API_BASE_URL || API_BASE_URL;
-    const response = await fetch(`${baseUrl}/api/imdb/cast/${imdbId}?limit=12`);
+    const response = await fetch(`${API_BASE_URL}/api/imdb/cast/${imdbId}?limit=12`);
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || 'Failed to fetch cast');
@@ -91,8 +115,7 @@ async function fetchCastFromIMDB(imdbId) {
 }
 
 async function createProject(imdbId, videoPath = 'content.mp4') {
-    const baseUrl = window.API_BASE_URL || API_BASE_URL;
-    const response = await fetch(`${baseUrl}/api/projects`, {
+    const response = await fetch(`${API_BASE_URL}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -109,8 +132,7 @@ async function createProject(imdbId, videoPath = 'content.mp4') {
 }
 
 async function generateSpot(projectId, actorName, duration = 10) {
-    const baseUrl = window.API_BASE_URL || API_BASE_URL;
-    const response = await fetch(`${baseUrl}/api/projects/${projectId}/generate`, {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -127,8 +149,7 @@ async function generateSpot(projectId, actorName, duration = 10) {
 }
 
 async function getProject(projectId) {
-    const baseUrl = window.API_BASE_URL || API_BASE_URL;
-    const response = await fetch(`${baseUrl}/api/projects/${projectId}`);
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`);
     if (!response.ok) {
         throw new Error('Failed to fetch project');
     }
@@ -162,6 +183,10 @@ async function handleContentSearch() {
 
         // Create project (this indexes the video and finds actors)
         currentProject = await createProject(imdbId, videoPath);
+        currentImdbId = imdbId;
+        
+        // Save state
+        saveState();
         
         updateProcessStatus([
             { status: 'complete', text: 'Fetching cast from IMDb...', detail: `Found ${castData.cast_count} actors with photos` },
@@ -184,7 +209,7 @@ async function handleContentSearch() {
 }
 
 // Display Functions
-function displayContent(castData, project) {
+function displayContent(castData, project, restored = false) {
     // Display title with year only - clean and professional
     const yearInfo = castData.year ? `(${castData.year})` : '';
     
@@ -194,9 +219,32 @@ function displayContent(castData, project) {
         </div>
     `;
 
+    // Restore IMDb input if restored from cache
+    if (restored && currentImdbId) {
+        imdbInput.value = currentImdbId;
+        findContentBtn.disabled = false;
+    }
+
+    // Get actors found in video for the generation list
+    const foundActors = project.actors?.filter(a => a.clips && a.clips.length > 0) || [];
+    
     actorsGrid.innerHTML = castData.cast.map(actor => {
-        const clipCount = getActorClipCount(actor.name_id, project);
-        const isFound = clipCount > 0;
+        const isFound = foundActors.some(a => a.actor_id === actor.name_id);
+        const actorData = foundActors.find(a => a.actor_id === actor.name_id);
+        const clipCount = actorData?.clips?.length || 0;
+        
+        // Generate thumbnail HTML for found actors
+        let thumbnailsHtml = '';
+        if (isFound && actorData?.clips?.length > 0) {
+            const thumbnails = actorData.clips.slice(0, 3).map((clip, i) => 
+                `<img src="/thumbnails/${currentImdbId}_${clip.start.toFixed(1)}.jpg" 
+                     class="clip-thumbnail" 
+                     alt="Clip ${i + 1}"
+                     title="${clip.start.toFixed(1)}s - ${clip.end.toFixed(1)}s"
+                     onerror="this.style.display='none'">`
+            ).join('');
+            thumbnailsHtml = `<div class="clip-thumbnails">${thumbnails}</div>`;
+        }
         
         return `
         <div class="actor-card fade-in" data-actor-id="${actor.name_id}">
@@ -206,17 +254,36 @@ function displayContent(castData, project) {
             <div class="actor-info">
                 <h3>${actor.name}</h3>
                 <p class="character">${actor.characters?.join(', ') || actor.category}</p>
-                ${actor.birth_year ? `<p class="birth-year">Born: ${actor.birth_year}</p>` : ''}
-                ${!isFound ? `<p class="not-found">Not found in video</p>` : ''}
+                ${thumbnailsHtml}
+                ${!isFound ? `
+                    <p class="not-found">Not found in video</p>
+                    <button class="use-different-image-btn" onclick="alert('Feature coming soon: Upload alternate headshot')">
+                        Use Different Image
+                    </button>
+                ` : ''}
+                ${isFound && !actorData.generated_video ? `
+                    <button class="generate-btn" onclick="handleGenerateSpot('${actor.name}', '${actor.name_id}', ${clipCount})">
+                        Generate Spot
+                    </button>
+                ` : ''}
+                ${isFound && actorData.generated_video ? `
+                    <div class="video-generated">
+                        <span class="success-badge">✓ Spot Generated</span>
+                        <video controls width="100%" style="margin-top: 0.5rem; border-radius: 4px;" autoplay>
+                            <source src="${getVideoUrl(currentProject.project_id, actor.name_id)}" type="video/mp4">
+                        </video>
+                    </div>
+                ` : ''}
             </div>
         </div>
     `}).join('');
 
     contentDetails.classList.remove('hidden');
-    generationStatus.classList.remove('hidden');
     
-    // Initialize status list with actors found in video
-    initializeGeneration(project);
+    // Hide process status after showing results
+    setTimeout(() => {
+        processStatus.classList.add('hidden');
+    }, 2000);
 }
 
 function actorHasClips(actorId, project) {
@@ -322,27 +389,60 @@ function getVideoUrl(projectId, actorId) {
 }
 
 // Global function for button clicks
-window.handleGenerateSpot = async function(actorName, actorId) {
+window.handleGenerateSpot = async function(actorName, actorId, clipCount) {
     if (!currentProject) return;
 
-    try {
-        // Update UI to show processing
-        updateGenerationStatus(actorName, 'pending', 'Generating video...');
+    // Find the actor card and update it
+    const actorCard = document.querySelector(`[data-actor-id="${actorId}"]`);
+    if (!actorCard) return;
 
+    const actorInfo = actorCard.querySelector('.actor-info');
+    const originalContent = actorInfo.innerHTML;
+
+    // Show generating state
+    actorInfo.innerHTML = `
+        <h3>${actorName}</h3>
+        <div class="generating-state">
+            <div class="spinner"></div>
+            <span>Generating spot...</span>
+        </div>
+    `;
+
+    try {
         // Generate the spot
         const result = await generateSpot(currentProject.project_id, actorName);
 
-        // Update UI with success
-        const videoUrl = getVideoUrl(currentProject.project_id, actorId);
-        updateGenerationStatus(actorName, 'complete', 'Video generated successfully', videoUrl);
-
         // Refresh the project data
         currentProject = await getProject(currentProject.project_id);
-        initializeGeneration(currentProject);
+        
+        // Re-render with video
+        const foundActors = currentProject.actors?.filter(a => a.clips && a.clips.length > 0) || [];
+        const actorData = foundActors.find(a => a.actor_id === actorId);
+        
+        // Save state after successful generation
+        saveState();
+        
+        actorInfo.innerHTML = `
+            <h3>${actorName}</h3>
+            <p class="character">${actorData?.clips[0]?.actor_name || ''}</p>
+            <div class="video-generated">
+                <span class="success-badge">✓ Spot Generated</span>
+                <video controls width="100%" style="margin-top: 0.5rem; border-radius: 4px;" autoplay>
+                    <source src="${getVideoUrl(currentProject.project_id, actorId)}" type="video/mp4">
+                </video>
+            </div>
+        `;
 
     } catch (error) {
         console.error('Generation error:', error);
-        updateGenerationStatus(actorName, 'error', 'Generation failed: ' + error.message);
+        // Restore original content with error
+        actorInfo.innerHTML = `
+            <h3>${actorName}</h3>
+            <p class="error-message">Generation failed: ${error.message}</p>
+            <button class="generate-btn" onclick="handleGenerateSpot('${actorName}', '${actorId}', ${clipCount})">
+                Try Again
+            </button>
+        `;
     }
 };
 

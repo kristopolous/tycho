@@ -41,12 +41,16 @@ LTX_API_KEY=your_key_here
 ```bash
 pip install twelvelabs fastapi uvicorn python-dotenv requests
 
-python api.py
-python -m http.server 3000
+python app.py
 ```
 
 ### 4. Open Browser
-http://localhost:3000
+The app will display the port (starts at 8000):
+```
+Starting Tycho API on port 8000...
+```
+
+Go to http://localhost:8000
 
 Enter `tt0310917` (The Day After Tomorrow) and click **Find Content**.
 

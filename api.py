@@ -54,8 +54,13 @@ app.add_middleware(
 OUTPUT_DIR = Path(__file__).parent / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Thumbnail cache directory
+THUMBNAIL_CACHE_DIR = OUTPUT_DIR / "thumbnails"
+THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 # Mount static files for video playback
 app.mount("/videos", StaticFiles(directory=str(OUTPUT_DIR)), name="videos")
+app.mount("/thumbnails", StaticFiles(directory=str(THUMBNAIL_CACHE_DIR)), name="thumbnails")
 
 # Initialize orchestrator
 orchestrator = TychoOrchestrator(output_dir=str(OUTPUT_DIR))
@@ -276,17 +281,21 @@ async def generate_spot(project_id: str, request: GenerateSpotRequest):
     
     if not actor.get("clips"):
         raise HTTPException(status_code=400, detail="No clips found for this actor")
-    
+
     try:
+        # Load project object
+        from tycho import TychoProject
+        project_obj = TychoProject(**project_data)
+        
         # Generate the spot
         video_path = orchestrator.generate_spot(
-            project_id=project_id,
+            project=project_obj,
             actor_name=actor["actor_name"],
             prompt=request.prompt,
             duration=request.duration,
             resolution=request.resolution,
         )
-        
+
         if not video_path:
             raise HTTPException(status_code=500, detail="Failed to generate video")
         

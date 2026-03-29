@@ -47,6 +47,7 @@ class TwelveLabsClient:
         self.client = TwelveLabs(api_key=self.api_key)
         self._index_id = None
         self._video_id = None
+        self._checked_for_video = False  # Cache flag
     
     def create_index(self, index_name: str = "tycho_index") -> str:
         """
@@ -103,7 +104,7 @@ class TwelveLabsClient:
     def upload_video(self, video_path: str, wait_for_ready: bool = True) -> str:
         """
         Upload a video file to the index for processing.
-        If the index already has videos, skip upload and return the first video_id.
+        Skips upload if we already have a video_id cached.
 
         Args:
             video_path: Path to the video file
@@ -112,15 +113,10 @@ class TwelveLabsClient:
         Returns:
             video_id: Unique identifier for the uploaded video
         """
-        # Check if index already has videos
-        try:
-            videos = list(self.client.video.list(index_id=self.index_id))
-            if videos:
-                print(f"[12Labs] Index already has {len(videos)} video(s), reusing")
-                self._video_id = videos[0].id
-                return self._video_id
-        except Exception as e:
-            print(f"[12Labs] Error checking existing videos: {e}")
+        # Return cached video_id if we have one
+        if self._video_id:
+            print(f"[12Labs] Using cached video_id: {self._video_id}")
+            return self._video_id
         
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video not found: {video_path}")

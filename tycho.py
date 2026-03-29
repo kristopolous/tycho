@@ -115,7 +115,23 @@ class TychoOrchestrator:
             index_name = f"tycho_{imdb_title_id}"
         
         self.twelvelabs.create_index(index_name)
-        video_id = self.twelvelabs.upload_video(video_path)
+        
+        # Check if we already have a video indexed (from previous run)
+        # by checking if any videos exist in the index
+        try:
+            videos = list(self.twelvelabs.client.indexes.videos.list(
+                index_id=self.twelvelabs.index_id,
+                page_limit=1
+            ))
+            if videos:
+                video_id = videos[0].id
+                print(f"[12Labs] Reusing existing video: {video_id}")
+            else:
+                # No existing video, upload new one
+                video_id = self.twelvelabs.upload_video(video_path)
+        except Exception as e:
+            print(f"[12Labs] Could not check existing videos: {e}")
+            video_id = self.twelvelabs.upload_video(video_path)
         
         # Step 3: Search for each actor in the video
         print("\n[Step 3/5] Searching for actors in video...")
