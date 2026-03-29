@@ -7,6 +7,28 @@ const API_BASE_URL = 'http://localhost:8000';
 // Default video for testing (under 5.2 MB limit for 12Labs)
 const DEFAULT_VIDEO = 'coke.webm';
 
+// Auto-detect API port if 8000 is not available
+async function detectApiPort() {
+    const ports = [8000, 8001, 8002, 8003, 8004, 8005];
+    for (const port of ports) {
+        try {
+            const response = await fetch(`http://localhost:${port}/api/health`, { method: 'HEAD' });
+            if (response.ok) {
+                console.log(`API detected on port ${port}`);
+                return `http://localhost:${port}`;
+            }
+        } catch (e) {
+            // Try next port
+        }
+    }
+    return 'http://localhost:8000'; // Default fallback
+}
+
+// Initialize API URL on load
+detectApiPort().then(url => {
+    window.API_BASE_URL = url;
+});
+
 // DOM Elements
 const imdbInput = document.getElementById('imdbId');
 const videoPathInput = document.getElementById('videoPath');
@@ -16,10 +38,24 @@ const contentTitle = document.getElementById('contentTitle');
 const actorsGrid = document.getElementById('actorsGrid');
 const generationStatus = document.getElementById('generationStatus');
 const statusList = document.getElementById('statusList');
+const processStatus = document.getElementById('processStatus');
+const processSteps = document.getElementById('processSteps');
 
 // State
 let currentProject = null;
 let currentActors = [];
+
+// Process status tracking
+function updateProcessStatus(steps) {
+    processStatus.classList.remove('hidden');
+    processSteps.innerHTML = steps.map((step, i) => `
+        <div class="process-step ${step.status}">
+            <div class="step-indicator ${step.status}"></div>
+            <span class="step-text">${step.text}</span>
+            ${step.detail ? `<span class="step-detail">${step.detail}</span>` : ''}
+        </div>
+    `).join('');
+}
 
 // Event Listeners
 findContentBtn.addEventListener('click', handleContentSearch);
@@ -45,7 +81,8 @@ function validateImdbId(event) {
 
 // API Functions
 async function fetchCastFromIMDB(imdbId) {
-    const response = await fetch(`${API_BASE_URL}/api/imdb/cast/${imdbId}?limit=12`);
+    const baseUrl = window.API_BASE_URL || API_BASE_URL;
+    const response = await fetch(`${baseUrl}/api/imdb/cast/${imdbId}?limit=12`);
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || 'Failed to fetch cast');
@@ -54,7 +91,8 @@ async function fetchCastFromIMDB(imdbId) {
 }
 
 async function createProject(imdbId, videoPath = 'content.mp4') {
-    const response = await fetch(`${API_BASE_URL}/api/projects`, {
+    const baseUrl = window.API_BASE_URL || API_BASE_URL;
+    const response = await fetch(`${baseUrl}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -71,7 +109,8 @@ async function createProject(imdbId, videoPath = 'content.mp4') {
 }
 
 async function generateSpot(projectId, actorName, duration = 10) {
-    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/generate`, {
+    const baseUrl = window.API_BASE_URL || API_BASE_URL;
+    const response = await fetch(`${baseUrl}/api/projects/${projectId}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -88,7 +127,8 @@ async function generateSpot(projectId, actorName, duration = 10) {
 }
 
 async function getProject(projectId) {
-    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`);
+    const baseUrl = window.API_BASE_URL || API_BASE_URL;
+    const response = await fetch(`${baseUrl}/api/projects/${projectId}`);
     if (!response.ok) {
         throw new Error('Failed to fetch project');
     }
@@ -98,26 +138,45 @@ async function getProject(projectId) {
 // Content Search
 async function handleContentSearch() {
     const imdbId = imdbInput.value.trim();
-    const videoPath = videoPathInput.value.trim() || 'content.mp4';
+    const videoPath = videoPathInput.value.trim() || DEFAULT_VIDEO;
     if (!imdbId) return;
 
     try {
         findContentBtn.disabled = true;
-        findContentBtn.textContent = 'Fetching Cast...';
+        
+        // Show process status
+        updateProcessStatus([
+            { status: 'active', text: 'Fetching cast from IMDb...', detail: '' },
+            { status: 'pending', text: 'Creating video index', detail: '' },
+            { status: 'pending', text: 'Searching for actors in video', detail: '' },
+        ]);
 
         // Fetch cast from IMDb
         const castData = await fetchCastFromIMDB(imdbId);
         
+        updateProcessStatus([
+            { status: 'complete', text: 'Fetching cast from IMDb...', detail: `Found ${castData.cast_count} actors with photos` },
+            { status: 'active', text: 'Creating video index', detail: '' },
+            { status: 'pending', text: 'Searching for actors in video', detail: '' },
+        ]);
+
         // Create project (this indexes the video and finds actors)
-        findContentBtn.textContent = 'Creating Project...';
         currentProject = await createProject(imdbId, videoPath);
+        
+        updateProcessStatus([
+            { status: 'complete', text: 'Fetching cast from IMDb...', detail: `Found ${castData.cast_count} actors with photos` },
+            { status: 'complete', text: 'Video indexed', detail: '' },
+            { status: 'complete', text: 'Search complete', detail: `${currentProject.actors.filter(a => a.clips?.length > 0).length} actors found in video` },
+        ]);
 
         displayContent(castData, currentProject);
-        initializeGeneration(currentProject);
 
     } catch (error) {
         console.error('Error:', error);
         alert('Error: ' + error.message);
+        updateProcessStatus([
+            { status: 'error', text: 'Error: ' + error.message, detail: '' },
+        ]);
     } finally {
         findContentBtn.disabled = false;
         findContentBtn.textContent = 'Find Content';
@@ -126,7 +185,14 @@ async function handleContentSearch() {
 
 // Display Functions
 function displayContent(castData, project) {
-    contentTitle.textContent = `IMDb: ${castData.imdb_title_id} - ${castData.cast_count} Cast Members Found`;
+    // Display title with year only - clean and professional
+    const yearInfo = castData.year ? `(${castData.year})` : '';
+    
+    contentTitle.innerHTML = `
+        <div class="title-header">
+            <h2>${castData.title} ${yearInfo}</h2>
+        </div>
+    `;
 
     actorsGrid.innerHTML = castData.cast.map(actor => {
         const clipCount = getActorClipCount(actor.name_id, project);
@@ -142,17 +208,15 @@ function displayContent(castData, project) {
                 <p class="character">${actor.characters?.join(', ') || actor.category}</p>
                 ${actor.birth_year ? `<p class="birth-year">Born: ${actor.birth_year}</p>` : ''}
                 ${!isFound ? `<p class="not-found">Not found in video</p>` : ''}
-                <button class="generate-btn" 
-                        onclick="handleGenerateSpot('${actor.name}', '${actor.name_id}')"
-                        ${!isFound ? 'disabled' : ''}>
-                    ${isFound ? 'Generate Spot' : 'Not Found'}
-                </button>
             </div>
         </div>
     `}).join('');
 
     contentDetails.classList.remove('hidden');
     generationStatus.classList.remove('hidden');
+    
+    // Initialize status list with actors found in video
+    initializeGeneration(project);
 }
 
 function actorHasClips(actorId, project) {
@@ -169,21 +233,41 @@ function updateGenerationStatus(actorName, status, message, videoUrl = null) {
     const statusItem = document.querySelector(`[data-actor="${actorName}"]`);
     if (statusItem) {
         const indicator = statusItem.querySelector('.status-indicator');
-        const messageEl = statusItem.querySelector('.status-message');
+        const clipCountEl = statusItem.querySelector('.clip-count');
         const actionEl = statusItem.querySelector('.status-action');
 
         indicator.className = `status-indicator status-${status}`;
-        messageEl.textContent = message;
-
-        if (videoUrl) {
+        
+        if (status === 'pending') {
+            // Show generating message
+            if (clipCountEl) {
+                clipCountEl.textContent = message;
+                clipCountEl.className = 'clip-count generating';
+            }
+            // Disable button during generation
+            const btn = actionEl.querySelector('button');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Generating...';
+            }
+        } else if (status === 'complete' && videoUrl) {
+            // Show video player
             actionEl.innerHTML = `
-                <video controls width="100%" style="margin-top: 0.5rem; border-radius: 4px;">
+                <video controls width="240" style="border-radius: 4px;">
                     <source src="${videoUrl}" type="video/mp4">
-                    Your browser does not support video playback.
                 </video>
-                <a href="${videoUrl}" download class="download-btn" style="display: inline-block; margin-top: 0.5rem;">
-                    Download Video
-                </a>
+            `;
+        } else if (status === 'error') {
+            // Show error and retry button
+            if (clipCountEl) {
+                clipCountEl.textContent = message;
+                clipCountEl.className = 'clip-count error';
+            }
+            actionEl.innerHTML = `
+                <button onclick="handleGenerateSpot('${actorName}', '${actorName}')" 
+                        class="generate-btn status-generate-btn">
+                    Try Again
+                </button>
             `;
         }
     }
@@ -192,35 +276,49 @@ function updateGenerationStatus(actorName, status, message, videoUrl = null) {
 function initializeGeneration(project) {
     currentActors = project.actors || [];
 
-    statusList.innerHTML = project.actors.map(actor => `
+    // Only show actors who were found in the video (have clips)
+    const foundActors = project.actors.filter(actor => actor.clips && actor.clips.length > 0);
+    
+    if (foundActors.length === 0) {
+        statusList.innerHTML = `
+            <div class="status-item status-complete">
+                <div class="status-info">
+                    <div class="status-indicator status-complete"></div>
+                    <span>No actors found in video. Try a different title or video.</span>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    statusList.innerHTML = foundActors.map(actor => `
         <div class="status-item" data-actor="${actor.actor_name}">
             <div class="status-info">
                 <div class="status-indicator status-${actor.generated_video ? 'complete' : 'pending'}"></div>
-                <span>${actor.actor_name}</span>
-            </div>
-            <div class="status-content">
-                <span class="status-message">
-                    ${actor.generated_video ? 'Video generated' : `Found in ${actor.clips?.length || 0} clips`}
-                </span>
-                <div class="status-action">
-                    ${actor.generated_video ? `
-                        <video controls width="200" style="margin-top: 0.5rem; border-radius: 4px;">
-                            <source src="${getVideoUrl(project.project_id, actor.actor_id)}" type="video/mp4">
-                        </video>
-                    ` : `
-                        <button onclick="handleGenerateSpot('${actor.actor_name}', '${actor.actor_id}')" 
-                                class="generate-small-btn">
-                            Generate
-                        </button>
-                    `}
+                <div class="actor-status-content">
+                    <span class="actor-name">${actor.actor_name}</span>
+                    <span class="clip-count">Found in ${actor.clips.length} clip${actor.clips.length > 1 ? 's' : ''}</span>
                 </div>
+            </div>
+            <div class="status-action">
+                ${actor.generated_video ? `
+                    <video controls width="240" style="border-radius: 4px;">
+                        <source src="${getVideoUrl(project.project_id, actor.actor_id)}" type="video/mp4">
+                    </video>
+                ` : `
+                    <button onclick="handleGenerateSpot('${actor.actor_name}', '${actor.actor_id}')" 
+                            class="generate-btn status-generate-btn">
+                        Generate Spot
+                    </button>
+                `}
             </div>
         </div>
     `).join('');
 }
 
 function getVideoUrl(projectId, actorId) {
-    return `${API_BASE_URL}/api/projects/${projectId}/video/${actorId}`;
+    const baseUrl = window.API_BASE_URL || API_BASE_URL;
+    return `${baseUrl}/api/projects/${projectId}/video/${actorId}`;
 }
 
 // Global function for button clicks
@@ -230,13 +328,6 @@ window.handleGenerateSpot = async function(actorName, actorId) {
     try {
         // Update UI to show processing
         updateGenerationStatus(actorName, 'pending', 'Generating video...');
-
-        // Disable the button
-        const btn = event.target;
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Generating...';
-        }
 
         // Generate the spot
         const result = await generateSpot(currentProject.project_id, actorName);
@@ -249,23 +340,9 @@ window.handleGenerateSpot = async function(actorName, actorId) {
         currentProject = await getProject(currentProject.project_id);
         initializeGeneration(currentProject);
 
-        // Update the actor card
-        const actorCard = document.querySelector(`[data-actor-id="${actorId}"] .generate-btn`);
-        if (actorCard) {
-            actorCard.textContent = 'Generated!';
-            actorCard.disabled = true;
-        }
-
     } catch (error) {
         console.error('Generation error:', error);
         updateGenerationStatus(actorName, 'error', 'Generation failed: ' + error.message);
-        
-        // Re-enable button
-        const btn = event.target;
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = 'Try Again';
-        }
     }
 };
 

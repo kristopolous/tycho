@@ -272,6 +272,22 @@ def store_images_in_db(name_id: str, images: list):
     conn.close()
 
 
+def get_title_metadata(title_id: str) -> dict:
+    """Fetch title metadata from IMDb API."""
+    response = api_request(f"/titles/{title_id}")
+    return {
+        "id": response.get("id"),
+        "title": response.get("primaryTitle"),
+        "type": response.get("type"),
+        "year": response.get("startYear"),
+        "runtime_seconds": response.get("runtimeSeconds"),
+        "genres": response.get("genres", []),
+        "rating": response.get("rating", {}),
+        "plot": response.get("plot"),
+        "image_url": response.get("primaryImage", {}).get("url"),
+    }
+
+
 def fetch_cast_with_images(title_id: str, limit: int = 20) -> list:
     """
     Fetch cast members with their details and headshots.

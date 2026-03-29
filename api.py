@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from get_actors import fetch_cast_with_images, init_cache
+from get_actors import fetch_cast_with_images, init_cache, get_title_metadata
 from twelvelabs_client import TwelveLabsClient
 from ltx_client import LTXClient
 from tycho import TychoOrchestrator, TychoProject, ActorSpot
@@ -376,16 +376,26 @@ async def delete_project(project_id: str):
 async def get_imdb_cast(imdb_title_id: str, limit: int = 20):
     """
     Fetch cast information from IMDb for a title.
-
-    This is a standalone endpoint to preview cast before creating a project.
+    Only returns actors with headshots for professional presentation.
     """
     try:
         init_cache()
         cast = fetch_cast_with_images(imdb_title_id, limit=limit)
+        metadata = get_title_metadata(imdb_title_id)
+
+        # Filter to only actors with headshots
+        cast_with_photos = [c for c in cast if c.get("primary_image")]
 
         return {
             "imdb_title_id": imdb_title_id,
-            "cast_count": len(cast),
+            "title": metadata.get("title"),
+            "year": metadata.get("year"),
+            "type": metadata.get("type"),
+            "genres": metadata.get("genres"),
+            "rating": metadata.get("rating", {}).get("aggregateRating"),
+            "plot": metadata.get("plot"),
+            "poster_url": metadata.get("image_url"),
+            "cast_count": len(cast_with_photos),
             "cast": [
                 {
                     "name_id": c["name_id"],
@@ -393,9 +403,9 @@ async def get_imdb_cast(imdb_title_id: str, limit: int = 20):
                     "category": c["category"],
                     "characters": c.get("characters", []),
                     "birth_year": c.get("birth_date", {}).get("year") if c.get("birth_date") else None,
-                    "headshot_url": c["primary_image"].get("url") if c.get("primary_image") else None,
+                    "headshot_url": c["primary_image"].get("url"),
                 }
-                for c in cast
+                for c in cast_with_photos
             ]
         }
     except Exception as e:
@@ -424,4 +434,20 @@ async def internal_error_handler(request, exc):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import socket
+    
+    # Find available port starting from 8000
+    def find_free_port(start_port=8000, max_port=8100):
+        for port in range(start_port, max_port):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind(('', port))
+                    return port
+                except OSError:
+                    continue
+        raise RuntimeError(f"No available ports in range {start_port}-{max_port}")
+    
+    port = find_free_port()
+    print(f"Starting Tycho API on port {port}...")
+    uvicorn.run(app, host="0.0.0.0", port=port)

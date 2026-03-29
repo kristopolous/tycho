@@ -133,6 +133,54 @@ input:focus {
     text-align: center;
 }
 
+.title-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.title-header h2 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(45deg, var(--primary), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.title-meta {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.type-badge {
+    background: var(--primary);
+    color: var(--text);
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+}
+
+.genres {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.rating {
+    color: var(--warning);
+    font-weight: bold;
+}
+
+.plot {
+    max-width: 800px;
+    margin: 1rem auto;
+    color: var(--text-secondary);
+    font-style: italic;
+    line-height: 1.6;
+}
+
 .actors-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -210,20 +258,10 @@ input:focus {
     opacity: 0.6;
 }
 
-.generate-small-btn {
-    padding: 0.25rem 0.75rem;
-    background: var(--primary);
-    color: var(--text);
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    margin-left: 0.5rem;
-    transition: all 0.2s ease;
-}
-
-.generate-small-btn:hover:not(:disabled) {
-    background: var(--secondary);
+.status-generate-btn {
+    min-width: 140px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.95rem;
 }
 
 .download-btn {
@@ -249,10 +287,11 @@ input:focus {
 .status-item {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     background: var(--surface);
-    padding: 1rem;
+    padding: 1.25rem;
     border-radius: 8px;
+    margin-bottom: 1rem;
 }
 
 .status-info {
@@ -261,11 +300,29 @@ input:focus {
     gap: 1rem;
 }
 
-.status-content {
+.actor-status-content {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
-    gap: 0.5rem;
+    gap: 0.25rem;
+}
+
+.actor-name {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.clip-count {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.clip-count.generating {
+    color: var(--warning);
+    font-style: italic;
+}
+
+.clip-count.error {
+    color: var(--error);
 }
 
 .status-indicator {
