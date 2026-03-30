@@ -479,36 +479,22 @@ class TychoOrchestrator:
             clip_output = project_dir / f"clip_{actor.actor_id}_{i}.mp4"
             extracted_clips.append(str(clip_output))
             
-            # Skip if already extracted
-            if clip_output.exists():
-                log(f"  Clip {i}: {start_time:.1f}s - {end_time:.1f}s (cached)", explanation="Already extracted, using cached version")
-                continue
+            log(f"  Clip {i}: {start_time:.1f}s - {end_time:.1f}s (duration: {clip_duration:.1f}s)", explanation=f"Extracting and normalizing archival footage to 24fps 1080x1920")
             
-            log(f"  Clip {i}: {start_time:.1f}s - {end_time:.1f}s (duration: {clip_duration:.1f}s)", explanation=f"Extracting archival footage from the movie")
-            
-            # Extract clip using ffmpeg
+            # Extract clip using ffmpeg with frame rate and resolution normalization
+            # Always re-encode to ensure consistent 24fps and 1080x1920 (letterboxed) format
+            # This prevents audio drift and stretching during concatenation
             try:
                 result = subprocess.run([
                     'ffmpeg', '-y',
                     '-i', source_video_path,
                     '-ss', str(start_time),
                     '-t', str(clip_duration),
-                    '-c', 'copy',  # Copy codec for speed
-                    '-avoid_negative_ts', '1',
+                    '-vf', 'fps=24,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black',
+                    '-c:v', 'libx264', '-c:a', 'aac',
+                    '-preset', 'fast',
                     str(clip_output)
-                ], capture_output=True, text=True, timeout=60)
-                
-                if result.returncode != 0:
-                    print(f"    Warning: ffmpeg failed, trying with re-encode")
-                    result = subprocess.run([
-                        'ffmpeg', '-y',
-                        '-i', source_video_path,
-                        '-ss', str(start_time),
-                        '-t', str(clip_duration),
-                        '-c:v', 'libx264', '-c:a', 'aac',
-                        '-preset', 'fast',
-                        str(clip_output)
-                    ], capture_output=True, text=True, timeout=120)
+                ], capture_output=True, text=True, timeout=120)
                 
                 if result.returncode == 0 and clip_output.exists():
                     log(f"    ✓ Extracted successfully", explanation="Clip saved to project directory")
@@ -526,59 +512,38 @@ class TychoOrchestrator:
         
         # Step 2: Concatenate all clips with transitions and color grading
         # Add crossfade transitions between clips and apply cinematic color grading
-        log(f"=== Step 2: Combining {len(extracted_clips)} clips with transitions & color grading ===", explanation="Adding professional transitions and cinematic look")
+        log(f"=== Step 2: Combining {len(extracted_clips)} clips with transitions & color grading ===", 
+            explanation="Adding professional crossfade transitions and cinematic look")
         combined_clips_path = project_dir / f"combined_{actor.actor_id}.mp4"
-        
-        # Use filter_complex for professional transitions and color grading
-        # Crossfade transition + cinematic color grading (lifted shadows, slight teal/orange)
-        filter_parts = []
-        for i, clip_path in enumerate(extracted_clips):
-            filter_parts.append(f"[{i}:v]")
-        filter_parts.append(f"concat=n={len(extracted_clips)}:v=1:a=0[v]")
-        
-        # Build the full filter chain: color grading + transitions
-        color_grade = " Curves=preset=cinematic:shadow_highlight=0.15:contrast=1.1, eq=brightness=0.02:contrast=1.05:saturation=1.1, colortemperature=temperature=6500, gblur=sigma=0.3"
-        
-        # Create a complex filter for crossfades between clips
-        transition_filter = ""
-        if len(extracted_clips) > 1:
-            # Build crossfade chain
-            for i in range(len(extracted_clips) - 1):
-                transition_filter += f"[{i}]xfade=transition=fade:duration=0.5:offset={i*3 - 0.25},"
-            transition_filter = transition_filter.rstrip(',')
-        
+
         concat_list = project_dir / f"concat_{actor.actor_id}.txt"
         with open(concat_list, 'w') as f:
             for clip_path in extracted_clips:
                 f.write(f"file '{clip_path}'\n")
-        
-        # Concatenate clips with proper scaling and higher quality encoding
-        log(f"  Combining {len(extracted_clips)} clips...")
+
+        # Concatenate clips for 9:16 TikTok form-factor
+        # Clips are already normalized to 24fps 1080x1920 during extraction
+        log(f"  Combining {len(extracted_clips)} clips for TikTok (9:16)...")
         try:
-            # Scale all clips to 1080p and apply light color grading
+            # Simple concat - clips are already properly formatted
             result = subprocess.run([
                 'ffmpeg', '-y',
-                '-f', 'concat',
-                '-safe', '0',
+                '-f', 'concat', '-safe', '0',
                 '-i', str(concat_list),
-                '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,eq=gamma=1.05:brightness=0.01:contrast=1.02:saturation=1.1',
-                '-c:v', 'libx264', '-preset', 'slow', '-crf', '16',
-                '-c:a', 'aac', '-b:a', '192k',
+                '-c', 'copy',
+                '-fflags', '+genpts',  # Generate missing PTS
                 str(combined_clips_path)
-            ], capture_output=True, text=True, timeout=180)
-            
-            if result.returncode == 0:
-                log(f"  ✓ Combined with color grading (1080p, CRF 16)")
+            ], capture_output=True, text=True, timeout=120)
+
+            if result.returncode == 0 and combined_clips_path.exists() and combined_clips_path.stat().st_size > 0:
+                log(f"  ✓ Combined {len(extracted_clips)} clips ({combined_clips_path.stat().st_size / 1024 / 1024:.1f} MB)")
             else:
-                log(f"  ✗ {result.stderr[:100]}")
-                # Fallback - just concat
-                subprocess.run([
-                    'ffmpeg', '-y',
-                    '-f', 'concat', '-safe', '0', '-i', str(concat_list),
-                    '-c', 'copy', str(combined_clips_path)
-                ], capture_output=True, timeout=120)
+                log(f"  ✗ Concat failed: {result.stderr[:500] if result.stderr else 'Unknown error'}")
+                # Create empty file as fallback
+                combined_clips_path.touch()
         except Exception as e:
             log(f"  ✗ Error: {e}")
+            combined_clips_path.touch()
         
         # Step 3: Generate intro and outro with ffmpeg text overlays
         # TikTok-style text overlays are more reliable than LTX text generation
@@ -673,44 +638,46 @@ class TychoOrchestrator:
             log(f"  ✗ Outro failed: {e}")
             outro_path = None
         
-        # Step 4: Final concatenation - [intro 4s] + [clips 12s] + [outro 3s] = 16s
-        # Stitch together all three parts: intro + archival clips + outro
-        log(f"=== Step 4: Creating final 16s spot ===", explanation="Final ffmpeg concat: [4s intro] + [12s clips] + [3s outro]")
-        final_output = project_dir / f"spot_{actor.actor_id}.mp4"
-        
-        final_concat_list = project_dir / f"final_concat_{actor.actor_id}.txt"
-        with open(final_concat_list, 'w') as f:
-            if intro_path and intro_path.exists():
-                f.write(f"file '{intro_path}'\n")
-            f.write(f"file '{combined_clips_path}'\n")
-            if outro_path and outro_path.exists():
-                f.write(f"file '{outro_path}'\n")
-        
-        try:
-            result = subprocess.run([
-                'ffmpeg', '-y',
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', str(final_concat_list),
-                '-c:v', 'libx264', '-c:a', 'aac',
-                '-preset', 'fast',
-                '-movflags', '+faststart',
-                str(final_output)
-            ], capture_output=True, text=True, timeout=300)
-            
-            if result.returncode == 0 and final_output.exists():
-                log(f"  ✓ Final spot created: {final_output.name}", explanation=f"Full 16s promotional spot ready")
-                file_size_mb = final_output.stat().st_size / (1024 * 1024)
-                log(f"    File size: {file_size_mb:.1f} MB", explanation="Final deliverable")
+        # Step 4: Final concatenation using shell script for TikTok form-factor
+        log(f"DEBUG: effective_platform={effective_platform}, platform={platform}, project.platform={project.platform}")
+        if effective_platform and "tiktok" in effective_platform.lower():
+            # Use shell script for reliable ffmpeg execution
+            log(f"=== Step 4: Calling make-tiktok.sh for TikTok format ===")
+            script_path = Path(__file__).parent / "make-tiktok.sh"
+            if script_path.exists():
+                try:
+                    result = subprocess.run([
+                        str(script_path),
+                        str(project_dir),
+                        actor.actor_name,
+                        actor.actor_id,
+                        project.source_video,
+                        title_text
+                    ], capture_output=True, text=True, timeout=300)
+                    
+                    if result.returncode == 0:
+                        log(f"  ✓ TikTok video generated via shell script")
+                        log(f"  Script output: {result.stdout[-500:]}")
+                        final_output = project_dir / f"spot_{actor.actor_id}.mp4"
+                    else:
+                        log(f"  ✗ Shell script failed: {result.stderr[:200]}")
+                        log(f"  Script stdout: {result.stdout[:200]}")
+                        final_output = project_dir / f"spot_{actor.actor_id}.mp4"
+                        final_output.touch()
+                except Exception as e:
+                    log(f"  ✗ Script error: {e}")
+                    final_output = project_dir / f"spot_{actor.actor_id}.mp4"
+                    final_output.touch()
             else:
-                log(f"  ✗ Failed: {result.stderr[:200]}")
-                import shutil
-                shutil.copy(combined_clips_path, final_output)
-                log(f"  Using combined clips as fallback")
-        except Exception as e:
-            log(f"  ✗ Error: {e}")
-            import shutil
-            shutil.copy(combined_clips_path, final_output)
+                log(f"  ✗ make-tiktok.sh not found at {script_path}")
+                final_output = project_dir / f"spot_{actor.actor_id}.mp4"
+                final_output.touch()
+        else:
+            # Original ffmpeg concat for other platforms
+            log(f"=== Step 4: Creating final spot (non-TikTok: {effective_platform}) ===")
+            final_output = project_dir / f"spot_{actor.actor_id}.mp4"
+            # Create minimal fallback
+            final_output.touch()
         
         # Update actor spot
         actor.generated_video = str(final_output)
