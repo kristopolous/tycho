@@ -27,10 +27,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Import our modules
-from get_actors import fetch_cast_with_images, init_cache, get_title_metadata
-from twelvelabs_client import TwelveLabsClient, ClipMatch
-from ltx_client import LTXClient
+# Import our modules (relative imports within package)
+from .get_actors import fetch_cast_with_images, init_cache, get_title_metadata
+from .twelvelabs_client import TwelveLabsClient, ClipMatch
+from .ltx_client import LTXClient
 
 
 @dataclass
@@ -643,7 +643,8 @@ class TychoOrchestrator:
         if effective_platform and "tiktok" in effective_platform.lower():
             # Use shell script for reliable ffmpeg execution
             log(f"=== Step 4: Calling make-tiktok.sh for TikTok format ===")
-            script_path = Path(__file__).parent / "make-tiktok.sh"
+            # Script is in scripts/ directory at project root (parent of tycho package)
+            script_path = Path(__file__).parent.parent / "scripts" / "make-tiktok.sh"
             if script_path.exists():
                 try:
                     result = subprocess.run([

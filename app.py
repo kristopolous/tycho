@@ -19,8 +19,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Import API router
-from api import router as api_router
+# Import API router from tycho package
+from tycho import api_router
 
 # Create main app
 app = FastAPI(
@@ -62,11 +62,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-# Import Tycho components
-from api import router as api_router
-from database import get_db
-from brave_client import get_brave_headshot
-from tmdb_client import get_headshots_for_actor
+# Import Tycho components from package
+from tycho import api_router, get_db, get_brave_headshot, get_headshots_for_actor
 
 # Global set to track in-progress discoveries to avoid redundant jobs
 discovery_in_progress: Set[str] = set()
